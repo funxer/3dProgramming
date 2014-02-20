@@ -18,7 +18,7 @@ By: Juhani Koivulainen
             }
             #container {
                 top: 0px; left: 0px;
-                border: 3px solid #fff
+                border: 3px solid #FFF;
             }
         </style>
     </head>
@@ -179,7 +179,7 @@ By: Juhani Koivulainen
         // Cycle colors
         colorSine += dt;
         
-        // Update period display
+        // Update frequency display
         frequencyDisplay.innerText = frequency;
         
         // Render scene and request next frame
@@ -220,9 +220,6 @@ By: Juhani Koivulainen
                     
                 s.scale = new THREE.Vector3(1,1,1);
                 s.material.color.lerp(color, .03);
-                //s.material.color.r = .3;
-                //s.material.color.g = 1 - Math.sin(colorSine + (i / max) * 4 * Math.PI);
-                //s.material.color.b = 1.0;
                 
                 x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude,
                 y = Math.sin(sineY + (i / max)) * 150,
@@ -242,9 +239,6 @@ By: Juhani Koivulainen
                     
                 s.scale = new THREE.Vector3(1,1,1)
                 s.material.color.lerp(color, .3);
-                //s.material.color.r = Math.sin(colorSine * 4 + (i / max) * 20 * Math.PI);
-                //s.material.color.g = Math.sin((Math.PI / 2) + (colorSine * 4) + (i / max) * 20 * Math.PI);
-                //s.material.color.b = Math.sin((Math.PI) + (colorSine * 4) + (i / max) * 20 * Math.PI);
                 
                 x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude,
                 y = Math.sin(sineY + (i / max) * 2 * Math.PI) * 150,
@@ -261,9 +255,6 @@ By: Juhani Koivulainen
                     
                 s.scale = new THREE.Vector3(scale, scale, scale);
                 s.material.color.lerp(color, .03);
-                //s.material.color.r = .8;
-                //s.material.color.g = Math.sin(colorSine + (i / max) * 20 * Math.PI);
-                //s.material.color.b = 0;
                 
                 x = Math.cos(sineX + (i / max) * 2 * Math.PI) * 150,
                 y = amplitudeY - 155 + Math.sin(sineY + (i / max) * 2 * Math.PI * frequency) * amplitudeY,
@@ -293,25 +284,25 @@ By: Juhani Koivulainen
     container.onmousewheel = function(e) {
         if (cameraDistance > 100 && e.wheelDelta === 120) cameraDistance -= 50;
         if (cameraDistance < 1000 && e.wheelDelta === -120) cameraDistance += 50;
-    }
+    };
     container.onmousedown = function(e) {
         mouseDown = true;
-    }
+    };
     window.onmouseup = function(e) {
         mouseDown = false;
         mouseXSpeed = mouseYSpeed = 0;
-    }
+    };
     window.onmousemove = function(e) {
         if (mouseDown) {
             mouseXSpeed = e.webkitMovementX;
             mouseYSpeed = e.webkitMovementY;
         }
-    }
+    };
     window.onkeyup = function(e) {
         if (frequency < 8 && e.keyCode === 38) frequency++;
         if (frequency > 0 && e.keyCode === 40) frequency--;
         e.preventDefault();
-    }
+    };
     </script>
     </body>
 </html>
