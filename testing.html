@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<!-- 
+THREE.JS test
+By: Juhani Koivulainen
+-->
+<html>
+    <head>
+        <title>THREE.JS</title>
+        <style>
+            body {
+                background: #777;
+                color: #FFF;
+                font-family: arial, serif, sans-serif;
+                font-size: 16px;
+                -ms-user-select: none;
+                -moz-user-select: none;
+                -webkit-user-select: none;
+            }
+            #container {
+                top: 0px; left: 0px;
+                border: 3px solid #fff
+            }
+        </style>
+    </head>
+    <body>
+        <!--<canvas id="can" width="800" height="600">Your browser does not support HTML5 canvas element</canvas>-->
+        <div id="container"></div>
+        Click and hold to rotate, scrollwheel zooms (Chrome only for now)<br>
+        Press UP or DOWN arrow keys to adjust frequency. Current frequency: <span id="frequencyDisplay"></span><br>
+        Select shape:<br>
+        <input id="shape1" type="radio" name="shapes" checked>Ball</input>
+        <input id="shape2" type="radio" name="shapes">Loop da hoop</input>
+        <input id="shape3" type="radio" name="shapes">Snake!</input>
+        <input id="shape4" type="radio" name="shapes">Patriotism</input><br>
+        Shape Movement: 
+        <input id="moveX" type="checkbox" checked>X</input>
+        <input id="moveY" type="checkbox" checked>Y</input>
+        <input id="moveZ" type="checkbox" checked>Z</input>
+    <script src="lib/three.min.js"></script>
+    <script>
+    // General vars
+    var $ = function(id) {return document.getElementById(id);}, // Who needs jQuery? :)
+        // DOM stuff
+        container = $("container"),
+        radio_1 = $("shape1"),
+        radio_2 = $("shape2"),
+        radio_3 = $("shape3"),
+        radio_4 = $("shape4"),
+        moveShapeBox = $("moveShapeCheckbox"),
+        moveX_check = $("moveX"),
+        moveY_check = $("moveY"),
+        moveZ_check = $("moveZ"),
+        frequencyDisplay = $("frequencyDisplay"),
+
+        // App stuff
+        timer = new Timer(),
+        spheres = [],
+        sphereTargets = [],
+        colorSine = 0,
+        planeWidth = 600,
+        planeHeight = 600,
+        mouseDown = false,
+        mouseXSpeed = 0,
+        mouseYSpeed = 0,
+        
+        // Shape vars
+        points = 200,
+        frequency = 5, 
+        sineX = sineY = sineZ = 0,
+        
+        // webGL stuff
+        renderer = new THREE.WebGLRenderer(),
+        width = window.innerWidth * .98,
+        height = window.innerHeight * .85,
+        fov = 50,
+        aspect = width / height,
+        near = .1,
+        far = 10000,
+        camera = new THREE.PerspectiveCamera(fov, aspect, near, far),
+        cameraDistance = 600,
+        cameraRotationX = cameraRotationY = cameraRotationZ = 0,
+        scene = new THREE.Scene();
+        
+    // Initialization
+    window.onload = function() {
+        // Add spheres to array and scene
+        var i = 0;
+        while (i++ < points) {
+            var s = new THREE.Mesh(new THREE.SphereGeometry(5, 6, 6), new THREE.MeshLambertMaterial( {color: 0x000000} ));
+            s.castShadow = true;
+            spheres.push(s);
+            scene.add(s);
+        }
+        
+        // Point light
+        var pointLight = new THREE.PointLight(0xFFFFFF);
+        scene.add(pointLight);
+        
+        // Directional light with shadow camera
+        var light = new THREE.DirectionalLight(0xdfebff, 1.75);
+        light.position.set(250, 400, 0);
+        light.position.multiplyScalar(1.3);
+        light.castShadow = true;
+        //light.shadowCameraVisible = true;
+        light.shadowMapWidth = 512;
+        light.shadowMapHeight = 512;
+        var d = 300;
+        light.shadowCameraLeft = -d;
+        light.shadowCameraRight = d;
+        light.shadowCameraTop = d;
+        light.shadowCameraBottom = -d;
+        light.shadowCameraFar = 1400;
+        light.shadowDarkness = 0.5;
+        scene.add(light);
+        
+        // Plane (ground)
+        var plane = new THREE.Mesh(new THREE.PlaneGeometry(planeWidth, planeHeight), new THREE.MeshPhongMaterial( {color: 0x6C6C6C} ));
+        plane.receiveShadow = true;
+        plane.position.y = -160;
+        plane.rotation.x = 3 * Math.PI / 2;
+        plane.rotation.y = 0;
+        scene.add(plane);
+        
+        // Skybox
+        var skybox = new THREE.Mesh(new THREE.CubeGeometry(10000, 10000, 10000), new THREE.MeshBasicMaterial({ color: 0x442200, side: THREE.BackSide }));
+        scene.add(skybox);
+        
+        // Renderer & DOM
+        renderer.shadowMapEnabled = true;
+        renderer.shadowMapSoft = true;
+        renderer.setSize(width, height);
+        container.style.width = width +"px";
+        container.style.height = height +"px";
+        container.appendChild(renderer.domElement);
+
+        // Start!
+        loop();
+    }
+    function loop() {
+        var i, max, sphere, currentShape,
+            dt = timer.tick();
+        
+        // Set the current shape
+        if (radio_1.checked) currentShape = shapes.ball;
+        if (radio_2.checked) currentShape = shapes.fountain;
+        if (radio_3.checked) currentShape = shapes.snake;
+        if (radio_4.checked) currentShape = shapes.flag;
+        
+        // Update sine function offsets if checked
+        if (moveX_check.checked) sineX += dt;
+        if (moveY_check.checked) sineY += dt;
+        if (moveZ_check.checked) sineZ += dt;
+        
+        // Switch cursor to crosshair when mouse is down
+        document.body.style.cursor = mouseDown ? "move" : "default"; 
+
+        // Update the camera position. It's not pretty and works only with Chrome...
+        camera.position.lerp(new THREE.Vector3(
+            Math.cos(cameraRotationX) * cameraDistance,
+            Math.cos(cameraRotationY) * cameraDistance,
+            Math.sin(cameraRotationZ) * cameraDistance), .1
+        );
+        camera.lookAt(new THREE.Vector3(0, 0, 0));
+        
+        // Apply rotation to camera when mouse is pressed
+        if (mouseDown) {
+            cameraRotationX += mouseXSpeed / 100;
+            cameraRotationY -= mouseYSpeed / 100;
+            cameraRotationZ += mouseXSpeed / 100;
+        }
+        
+        // Iterate through spheres, get desired positions and "lerp" to them
+        for (i = 0, max = spheres.length; i < max; i++) {
+            sphere = spheres[i];
+            sphereTargets[i] = currentShape.targetPosition(sphere, i, max);
+            sphere.position.lerp(sphereTargets[i], .04);
+        }
+        
+        // Cycle colors
+        colorSine += dt;
+        
+        // Update period display
+        frequencyDisplay.innerText = frequency;
+        
+        // Render scene and request next frame
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+    }
+    
+    // Game timer to determine deltatime. Copied from:
+    // http://blog.sethladd.com/2011/05/source-code-slides-and-video-for-html5.html
+    function Timer () {
+        this.gameTime = 0;
+        this.maxStep = 0.05;
+        this.wallLastTime = 0;
+    }
+    Timer.prototype.tick = function () {
+        var wallCurrent = window.performance && window.performance.now ? window.performance.now() : new Date().getTime();
+        var wallDelta = (wallCurrent - this.wallLastTime) / 1000;
+        this.wallLastTime = wallCurrent;
+        var gameDelta = Math.min(wallDelta, this.maxStep);
+        this.gameTime += gameDelta;
+        return gameDelta;
+    };
+    
+    // I decided to store shape algorithms in objects
+    // so I can add more later easily. Arguments are:
+    // s = sphere, i = index (sphere id number), max = total spheres.
+    // Also this way I only needed to write one for loop :)
+    var shapes = {
+        ball: {
+            targetPosition: function(s, i, max) {
+                var x, y, z,
+                    amplitude = 20 + Math.sin((i / max) * Math.PI) * 90,
+                    color = new THREE.Color(
+                        .3,
+                        1 - Math.sin(colorSine + (i / max) * 4 * Math.PI),
+                        1.0
+                    );
+                    
+                s.scale = new THREE.Vector3(1,1,1);
+                s.material.color.lerp(color, .03);
+                //s.material.color.r = .3;
+                //s.material.color.g = 1 - Math.sin(colorSine + (i / max) * 4 * Math.PI);
+                //s.material.color.b = 1.0;
+                
+                x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude,
+                y = Math.sin(sineY + (i / max)) * 150,
+                z = Math.sin(sineZ + (i / max) * 2 * Math.PI * frequency) * amplitude;
+                return new THREE.Vector3(x, y, z);
+            }
+        },
+        fountain: {
+            targetPosition: function(s, i, max) {
+                var x, y, z,
+                    amplitude = 40 + Math.sin((i / max) * Math.PI * 2) * 190,
+                    color = new THREE.Color(
+                        Math.sin(colorSine * 4 + (i / max) * 20 * Math.PI), 
+                        s.material.color.g = Math.sin((Math.PI / 2) + (colorSine * 4) + (i / max) * 20 * Math.PI),
+                        Math.sin((Math.PI) + (colorSine * 4) + (i / max) * 20 * Math.PI)
+                    );
+                    
+                s.scale = new THREE.Vector3(1,1,1)
+                s.material.color.lerp(color, .3);
+                //s.material.color.r = Math.sin(colorSine * 4 + (i / max) * 20 * Math.PI);
+                //s.material.color.g = Math.sin((Math.PI / 2) + (colorSine * 4) + (i / max) * 20 * Math.PI);
+                //s.material.color.b = Math.sin((Math.PI) + (colorSine * 4) + (i / max) * 20 * Math.PI);
+                
+                x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude,
+                y = Math.sin(sineY + (i / max) * 2 * Math.PI) * 150,
+                z = Math.sin(sineZ + (i / max) * 2 * Math.PI * frequency) * amplitude;
+                return new THREE.Vector3(x, y, z);
+            }
+        },
+        snake: {
+            targetPosition: function(s, i, max) {
+                var x, y, z,
+                    scale = .2 + (i / max) * 2,
+                    amplitudeY = 25 + Math.sin(-(i / max) * 2 * Math.PI) * 20,
+                    color = new THREE.Color(.8, Math.sin(colorSine + (i / max) * 20 * Math.PI), 0);
+                    
+                s.scale = new THREE.Vector3(scale, scale, scale);
+                s.material.color.lerp(color, .03);
+                //s.material.color.r = .8;
+                //s.material.color.g = Math.sin(colorSine + (i / max) * 20 * Math.PI);
+                //s.material.color.b = 0;
+                
+                x = Math.cos(sineX + (i / max) * 2 * Math.PI) * 150,
+                y = amplitudeY - 155 + Math.sin(sineY + (i / max) * 2 * Math.PI * frequency) * amplitudeY,
+                z = 250 - (i / max) * 500;
+                return new THREE.Vector3(x, y, z);
+            }
+        },
+        flag: {
+            targetPosition: function(s, i, max) {
+                var x, y, z,
+                    row = Math.floor(i / 20),
+                    column = i - (row * 20),
+                    color = (row >= 4 && row < 6) || (column >= 6 && column < 8) ? new THREE.Color(0, 0, 1.0) : new THREE.Color(1.0, 1.0, 1.0);
+                    
+                s.scale = new THREE.Vector3(1,1,1);
+                s.material.color.lerp(color, .03);
+                
+                x = Math.sin((sineX * 3) + (column / 20) * frequency * Math.PI) * 20;
+                y = -row * 10;
+                z = 100 - (i - (row * 20)) * 10;
+                return new THREE.Vector3(x, y, z);
+            }
+        }
+    };
+    
+    // Handle mouse and keyboard events
+    container.onmousewheel = function(e) {
+        if (cameraDistance > 100 && e.wheelDelta === 120) cameraDistance -= 50;
+        if (cameraDistance < 1000 && e.wheelDelta === -120) cameraDistance += 50;
+    }
+    container.onmousedown = function(e) {
+        mouseDown = true;
+    }
+    window.onmouseup = function(e) {
+        mouseDown = false;
+        mouseXSpeed = mouseYSpeed = 0;
+    }
+    window.onmousemove = function(e) {
+        if (mouseDown) {
+            mouseXSpeed = e.webkitMovementX;
+            mouseYSpeed = e.webkitMovementY;
+        }
+    }
+    window.onkeyup = function(e) {
+        if (frequency < 8 && e.keyCode === 38) frequency++;
+        if (frequency > 0 && e.keyCode === 40) frequency--;
+        e.preventDefault();
+    }
+    </script>
+    </body>
+</html>

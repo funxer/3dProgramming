@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<!-- 
+webGL Lesson 1
+By: Juhani Koivulainen
+-->
+<html>
+    <head>
+        <title>gl lesson 1</title>
+        <style>
+            body{background: #777;color: #FFF;}
+            canvas{top: 0px; left: 0px;border: 3px solid #FFF;}
+        </style>
+    </head>
+    <body>
+        <canvas id="can" width="800" height="600">Your browser does not support HTML5 canvas element</canvas>
+    <script id="shader-vs" type="x-shader/x-vertex">
+    attribute vec4 vPosition;
+    void main(void) {
+        gl_Position = vPosition;
+    }
+    </script>
+    <script id="shader-fs" type="x-shader/x-fragment">
+    void main(void) {
+        gl_FragColor = vec4(1.0, 1.0, 1.0, 1.0);
+    } 
+    </script>
+    <script>
+    // General vars
+    var $ = function(id) {return document.getElementById(id);},
+        canvas = $("can"),
+        gl, vs, fs, program, vbo, data, vertPos;
+        
+    window.onload = function() {
+        var vsSource = $("shader-vs").innerHTML,
+            fsSource = $("shader-fs").innerHTML;
+            
+        gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        
+        if (gl) {
+            gl.clearColor(0.0, 0.5, 0.3, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            
+            vs = makeShader(gl.VERTEX_SHADER, vsSource);
+            fs = makeShader(gl.FRAGMENT_SHADER, fsSource);
+            
+            program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                alert("Unable to initialize shader program");
+            }
+            
+            vbo = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+            data = [
+            /*  X       Y       Z     */
+                -0.5,   -0.5,   0.0,
+                0.5,    -0.5,   0.0,
+                0.0,    0.5,    0.0
+            ];
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(data), gl.STATIC_DRAW);
+            
+            vertPos = gl.getAttribLocation(program, "vPosition");
+            
+            gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
+            gl.vertexAttribPointer(vertPos, 3, gl.FLOAT, false, 0, 0);
+            
+            gl.useProgram(program);
+            gl.enableVertexAttribArray(vertPos);
+            gl.drawArrays(gl.TRIANGLES, 0, 3);
+        }
+        else {
+            alert("Unable to get webGL context");
+        }
+    };
+    
+    function makeShader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+            alert("Unable to compile shader: "+ gl.getShaderInfoLog(shader));
+        }
+        return s;
+    }
+    </script>
+    </body>
+</html>
