@@ -55,10 +55,14 @@ By: Juhani Koivulainen
         // App stuff
         timer = new Timer(),
         spheres = [],
-        sphereTargets = [],
+        floorTiles = [],
         colorSine = 0,
-        planeWidth = 600,
-        planeHeight = 600,
+        planeWidth = 800,
+        planeHeight = 800,
+        floorTileWidth = planeWidth / 3,
+        floorTileHeight = planeHeight / 3,
+        tilesX = planeWidth / floorTileWidth,
+        tilesZ = planeHeight / floorTileHeight,
         mouseDown = false,
         mouseXSpeed = 0,
         mouseYSpeed = 0,
@@ -81,15 +85,52 @@ By: Juhani Koivulainen
         cameraRotationX = cameraRotationY = cameraRotationZ = 0,
         scene = new THREE.Scene();
         
+    
     // Initialization
     window.onload = function() {
-        // Add spheres to array and scene
-        var i = 0;
+        var x, z, c
+            c = 0,
+            i = 0;
+        
+        // Setup renderer
+        renderer.setClearColorHex(0x11212A, 1);
+        renderer.shadowMapEnabled = true;
+        renderer.shadowMapSoft = true;
+        renderer.setSize(width, height);
+        container.style.width = width +"px";
+        container.style.height = height +"px";
+        container.appendChild(renderer.domElement);
+        
+        // Add spheres
         while (i++ < points) {
-            var s = new THREE.Mesh(new THREE.SphereGeometry(5, 6, 6), new THREE.MeshLambertMaterial( {color: 0x000000} ));
+            var s = new THREE.Mesh(new THREE.SphereGeometry(5, 6, 6), new THREE.MeshBasicMaterial( {color: 0x000000} ));
             s.castShadow = true;
             spheres.push(s);
             scene.add(s);
+        }
+        
+        // Create quads as floor tiles
+        for (z = 0; z < tilesZ; z++) {
+            for (x = 0; x < tilesX; x++) {
+                var tile,
+                    quadGeometry = new THREE.Geometry();
+
+                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth, 0, floorTileHeight));
+                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth * 2, 0, floorTileHeight));
+                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth * 2, 0, (floorTileHeight * 2)));
+                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth, 0, (floorTileHeight * 2)));
+                
+                quadGeometry.faces.push( new THREE.Face3( 0, 1, 2 ) );
+                quadGeometry.faces.push( new THREE.Face3( 0, 2, 3 ) );
+                
+                // MeshPhongMaterial and MeshLambertMaterial do not work for some reason...
+                tile = new THREE.Mesh(quadGeometry, new THREE.MeshBasicMaterial( { color: new THREE.Color(0.1, 0.2 + c / 20, 0.2), side:THREE.BackSide} ));
+                tile.position.set((-planeWidth) + x * floorTileWidth, -160, (-planeHeight / 1.2) + z * floorTileHeight);
+                tile.receiveShadow = true;
+                floorTiles.push(tile);
+                scene.add(tile);
+                c++; // lol
+            }
         }
         
         // Point light
@@ -113,26 +154,10 @@ By: Juhani Koivulainen
         light.shadowDarkness = 0.5;
         scene.add(light);
         
-        // Plane (ground)
-        var plane = new THREE.Mesh(new THREE.PlaneGeometry(planeWidth, planeHeight), new THREE.MeshPhongMaterial( {color: 0x6C6C6C} ));
-        plane.receiveShadow = true;
-        plane.position.y = -160;
-        plane.rotation.x = 3 * Math.PI / 2;
-        plane.rotation.y = 0;
-        scene.add(plane);
+        // Skybox temp
+        //var skybox = new THREE.Mesh(new THREE.CubeGeometry(10000, 10000, 10000), new THREE.MeshBasicMaterial({ color: 0x442200, side: THREE.BackSide }));
+        //scene.add(skybox);
         
-        // Skybox
-        var skybox = new THREE.Mesh(new THREE.CubeGeometry(10000, 10000, 10000), new THREE.MeshBasicMaterial({ color: 0x442200, side: THREE.BackSide }));
-        scene.add(skybox);
-        
-        // Renderer & DOM
-        renderer.shadowMapEnabled = true;
-        renderer.shadowMapSoft = true;
-        renderer.setSize(width, height);
-        container.style.width = width +"px";
-        container.style.height = height +"px";
-        container.appendChild(renderer.domElement);
-
         // Start!
         loop();
     }
@@ -172,10 +197,14 @@ By: Juhani Koivulainen
         // Iterate through spheres, get desired positions and "lerp" to them
         for (i = 0, max = spheres.length; i < max; i++) {
             sphere = spheres[i];
-            sphereTargets[i] = currentShape.targetPosition(sphere, i, max);
-            sphere.position.lerp(sphereTargets[i], .04);
+            sphere.position.lerp(currentShape.getSpherePosition(sphere, i, max), .04);
         }
-        
+        /*
+        // Wave the floor
+        for(i = 0, max = floorTiles.length; i < max; i++) {
+            floorTiles[i].position.y = -150 + Math.sin(sineY + (i / max) * 3 * Math.PI) * 20;
+        }
+        */
         // Cycle colors
         colorSine += dt;
         
@@ -209,7 +238,7 @@ By: Juhani Koivulainen
     // Also this way I only needed to write one for loop :)
     var shapes = {
         ball: {
-            targetPosition: function(s, i, max) {
+            getSpherePosition: function(s, i, max) {
                 var x, y, z,
                     amplitude = 20 + Math.sin((i / max) * Math.PI) * 90,
                     color = new THREE.Color(
@@ -221,33 +250,33 @@ By: Juhani Koivulainen
                 s.scale = new THREE.Vector3(1,1,1);
                 s.material.color.lerp(color, .03);
                 
-                x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude,
-                y = Math.sin(sineY + (i / max)) * 150,
+                x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude;
+                y = Math.sin(sineY + (i / max)) * 150;
                 z = Math.sin(sineZ + (i / max) * 2 * Math.PI * frequency) * amplitude;
                 return new THREE.Vector3(x, y, z);
             }
         },
         fountain: {
-            targetPosition: function(s, i, max) {
+            getSpherePosition: function(s, i, max) {
                 var x, y, z,
                     amplitude = 40 + Math.sin((i / max) * Math.PI * 2) * 190,
                     color = new THREE.Color(
                         Math.sin(colorSine * 4 + (i / max) * 20 * Math.PI), 
-                        s.material.color.g = Math.sin((Math.PI / 2) + (colorSine * 4) + (i / max) * 20 * Math.PI),
+                        Math.sin((Math.PI / 2) + (colorSine * 4) + (i / max) * 20 * Math.PI),
                         Math.sin((Math.PI) + (colorSine * 4) + (i / max) * 20 * Math.PI)
                     );
                     
                 s.scale = new THREE.Vector3(1,1,1)
-                s.material.color.lerp(color, .3);
+                s.material.color.lerp(color, .1);
                 
-                x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude,
-                y = Math.sin(sineY + (i / max) * 2 * Math.PI) * 150,
+                x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude;
+                y = Math.sin(sineY + (i / max) * 2 * Math.PI) * 150;
                 z = Math.sin(sineZ + (i / max) * 2 * Math.PI * frequency) * amplitude;
                 return new THREE.Vector3(x, y, z);
             }
         },
         snake: {
-            targetPosition: function(s, i, max) {
+            getSpherePosition: function(s, i, max) {
                 var x, y, z,
                     scale = .2 + (i / max) * 2,
                     amplitudeY = 25 + Math.sin(-(i / max) * 2 * Math.PI) * 20,
@@ -256,14 +285,14 @@ By: Juhani Koivulainen
                 s.scale = new THREE.Vector3(scale, scale, scale);
                 s.material.color.lerp(color, .03);
                 
-                x = Math.cos(sineX + (i / max) * 2 * Math.PI) * 150,
-                y = amplitudeY - 155 + Math.sin(sineY + (i / max) * 2 * Math.PI * frequency) * amplitudeY,
+                x = Math.cos(sineX + (i / max) * 2 * Math.PI) * 150;
+                y = amplitudeY - 155 + Math.sin(sineY + (i / max) * 2 * Math.PI * frequency) * amplitudeY;
                 z = 250 - (i / max) * 500;
                 return new THREE.Vector3(x, y, z);
             }
         },
         flag: {
-            targetPosition: function(s, i, max) {
+            getSpherePosition: function(s, i, max) {
                 var x, y, z,
                     row = Math.floor(i / 20),
                     column = i - (row * 20),
@@ -301,7 +330,6 @@ By: Juhani Koivulainen
     window.onkeyup = function(e) {
         if (frequency < 8 && e.keyCode === 38) frequency++;
         if (frequency > 0 && e.keyCode === 40) frequency--;
-        e.preventDefault();
     };
     </script>
     </body>
