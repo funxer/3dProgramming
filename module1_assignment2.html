@@ -88,12 +88,12 @@ By: Juhani Koivulainen
     
     // Initialization
     window.onload = function() {
-        var x, z, c
-            c = 0,
+        var x, z,
+            green = 0,
             i = 0;
         
         // Setup renderer
-        renderer.setClearColorHex(0x11212A, 1);
+        renderer.setClearColor(0x11212A, 1);
         renderer.shadowMapEnabled = true;
         renderer.shadowMapSoft = true;
         renderer.setSize(width, height);
@@ -117,19 +117,18 @@ By: Juhani Koivulainen
 
                 quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth, 0, floorTileHeight));
                 quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth * 2, 0, floorTileHeight));
-                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth * 2, 0, (floorTileHeight * 2)));
-                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth, 0, (floorTileHeight * 2)));
+                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth * 2, 0, floorTileHeight * 2));
+                quadGeometry.vertices.push(new THREE.Vector3(floorTileWidth, 0, floorTileHeight * 2));
                 
-                quadGeometry.faces.push( new THREE.Face3( 0, 1, 2 ) );
-                quadGeometry.faces.push( new THREE.Face3( 0, 2, 3 ) );
+                quadGeometry.faces.push(new THREE.Face3(0, 1, 2));
+                quadGeometry.faces.push(new THREE.Face3(0, 2, 3));
                 
                 // MeshPhongMaterial and MeshLambertMaterial do not work for some reason...
-                tile = new THREE.Mesh(quadGeometry, new THREE.MeshBasicMaterial( { color: new THREE.Color(0.1, 0.2 + c / 20, 0.2), side:THREE.BackSide} ));
+                tile = new THREE.Mesh(quadGeometry, new THREE.MeshBasicMaterial( { color: new THREE.Color(0.1, 0.2 + green++ / 20, 0.2), side:THREE.BackSide} ));
                 tile.position.set((-planeWidth) + x * floorTileWidth, -160, (-planeHeight / 1.2) + z * floorTileHeight);
                 tile.receiveShadow = true;
                 floorTiles.push(tile);
                 scene.add(tile);
-                c++; // lol
             }
         }
         
@@ -240,6 +239,7 @@ By: Juhani Koivulainen
         ball: {
             getSpherePosition: function(s, i, max) {
                 var x, y, z,
+                    scale = 0.01 + Math.sin(colorSine + (i / max) * Math.PI * 3) * 2,
                     amplitude = 20 + Math.sin((i / max) * Math.PI) * 90,
                     color = new THREE.Color(
                         .3,
@@ -247,7 +247,7 @@ By: Juhani Koivulainen
                         1.0
                     );
                     
-                s.scale = new THREE.Vector3(1,1,1);
+                s.scale.lerp(new THREE.Vector3(scale, scale, scale), 0.01);
                 s.material.color.lerp(color, .03);
                 
                 x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude;
@@ -266,7 +266,7 @@ By: Juhani Koivulainen
                         Math.sin((Math.PI) + (colorSine * 4) + (i / max) * 20 * Math.PI)
                     );
                     
-                s.scale = new THREE.Vector3(1,1,1)
+                s.scale.lerp(new THREE.Vector3(1, 1, 1), 0.01);
                 s.material.color.lerp(color, .1);
                 
                 x = Math.cos(sineX + (i / max) * 2 * Math.PI * frequency) * amplitude;
@@ -282,7 +282,7 @@ By: Juhani Koivulainen
                     amplitudeY = 25 + Math.sin(-(i / max) * 2 * Math.PI) * 20,
                     color = new THREE.Color(.8, Math.sin(colorSine + (i / max) * 20 * Math.PI), 0);
                     
-                s.scale = new THREE.Vector3(scale, scale, scale);
+                s.scale.lerp(new THREE.Vector3(scale, scale, scale), 0.01);
                 s.material.color.lerp(color, .03);
                 
                 x = Math.cos(sineX + (i / max) * 2 * Math.PI) * 150;
@@ -298,7 +298,7 @@ By: Juhani Koivulainen
                     column = i - (row * 20),
                     color = (row >= 4 && row < 6) || (column >= 6 && column < 8) ? new THREE.Color(0, 0, 1.0) : new THREE.Color(1.0, 1.0, 1.0);
                     
-                s.scale = new THREE.Vector3(1,1,1);
+                s.scale.lerp(new THREE.Vector3(1, 1, 1), 0.01);
                 s.material.color.lerp(color, .03);
                 
                 x = Math.sin((sineX * 3) + (column / 20) * frequency * Math.PI) * 20;
