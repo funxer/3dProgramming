@@ -45,7 +45,7 @@ By: Juhani Koivulainen
     varying float vAngleFragment;
     
     vec3 color(float a) {
-        return vec3(sin(a), cos(a), -sin(a));
+        return vec3(sin(a), cos(a), 0.0);
     }
     
     void main(void) {
@@ -61,14 +61,13 @@ By: Juhani Koivulainen
         radius = 6.0,
         pMatrix = new THREE.Matrix4(),
         mvMatrix = new THREE.Matrix4(),
+        vsSource = $("shader-vs").innerHTML,
+        fsSource = $("shader-fs").innerHTML,
         gl, vs, fs, program,
         uRadius, drawMode, projection, modelView;
     
     // Initialization
     window.onload = function() {
-        var vsSource = $("shader-vs").innerHTML,
-            fsSource = $("shader-fs").innerHTML;
-            
         gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
         
         if (gl) {
@@ -103,7 +102,7 @@ By: Juhani Koivulainen
             gl.vertexAttribPointer(vertexAngle, 1, gl.FLOAT, false, 0, 0);
             gl.enableVertexAttribArray(vertexAngle);
             
-            // Get uniform values from VS, in this case the view matrices
+            // Get uniform values from VS, in this case the view matrices and radius
             projection = gl.getUniformLocation(program, "uProjection");
             modelView = gl.getUniformLocation(program, "uModelView");
             uRadius = gl.getUniformLocation(program, "uRadius");
@@ -118,13 +117,13 @@ By: Juhani Koivulainen
     };
     function draw() {
         radius = parseFloat($("radiusBox").value);
-        if (!radius && isNaN(radius)) {
+        if (!radius || isNaN(radius)) {
             alert("Enter numerals only!");
         }
         else {
             // Do some dark magic with the matrices
             // (means that I dont quite get this part)
-            pMatrix.makeOrthographic( -7.0, 7.0, 7.0, -7.0, -0.1, 2.0);
+            pMatrix.makeOrthographic(-7.0, 7.0, 7.0, -7.0, -0.1, 2.0);
             mvMatrix.identity();
             
             // Set up viewport and clear canvas
