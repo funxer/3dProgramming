@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<!-- 
+3DGP14 MODULE 2
+ASSIGNMENT 1
+By: Juhani Koivulainen
+-->
+<html>
+    <head>
+        <title>VS Circle</title>
+        <style>
+            body{background: #777;color: #FFF;}
+            canvas{top: 0px; left: 0px;border: 3px solid #FFF;}
+        </style>
+    </head>
+    <body>
+        <canvas id="can" width="800" height="600">Your browser does not support HTML5 canvas element</canvas><br>
+        <input type="radio" name="modes" onclick="setMode('POINTS')" checked>Points</input>
+        <input type="radio" name="modes" onclick="setMode('LINE_LOOP')">Line loop</input>
+        <input type="radio" name="modes" onclick="setMode('TRIANGLE_FAN')">Polygon
+        <br>
+        Radius: <input id="radiusBox" type="text" value="4.0"></input>
+        <button id="drawButton" onclick="draw()">Draw</button><br>
+        Numbers are converted to float automatically
+    <script src="./lib/three.min.js"></script>
+    <script id="shader-vs" type="x-shader/x-vertex">
+    uniform mat4 uProjection;
+    uniform mat4 uModelView;
+    uniform float uRadius;
+    attribute float vAngle;
+    varying float vAngleFragment;
+    
+    vec4 transform(float a) {
+        return vec4(cos(a) * uRadius, sin(a) * uRadius, 0.0, 1.0);
+    }
+    
+    void main(void) {
+        gl_PointSize = 6.0;
+        gl_Position = uProjection * uModelView * transform(vAngle);
+        vAngleFragment = vAngle;
+    }
+    
+    </script>
+    <script id="shader-fs" type="x-shader/x-fragment">
+    precision highp float;
+    varying float vAngleFragment;
+    
+    vec3 color(float a) {
+        return vec3(sin(a), cos(a), -sin(a));
+    }
+    
+    void main(void) {
+        gl_FragColor = vec4(color(vAngleFragment), 1.0);
+    } 
+    </script>
+    <script>
+    // Set up our main variables
+    var $ = function(id) {return document.getElementById(id);},
+        canvas = $("can"),
+        angleData = [],
+        amountOfPoints = 32,
+        radius = 6.0,
+        pMatrix = new THREE.Matrix4(),
+        mvMatrix = new THREE.Matrix4(),
+        gl, vs, fs, program,
+        uRadius, drawMode, projection, modelView;
+    
+    // Initialization
+    window.onload = function() {
+        var vsSource = $("shader-vs").innerHTML,
+            fsSource = $("shader-fs").innerHTML;
+            
+        gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        
+        if (gl) {
+            // Set initial draw mode
+            drawMode = gl.POINTS;
+            
+            // Init program & shaders
+            vs = makeShader(gl.VERTEX_SHADER, vsSource);
+            fs = makeShader(gl.FRAGMENT_SHADER, fsSource);
+            program = gl.createProgram();
+            gl.attachShader(program, vs);
+            gl.attachShader(program, fs);
+            gl.linkProgram(program);
+            
+            if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+                alert("Unable to initialize shader program");
+            }
+            
+            // Create angle data that will be sent to VS
+            for (var i = 0; i < amountOfPoints; i++) {
+                angleData.push((i / amountOfPoints) * 2 * Math.PI);
+            }
+            
+            // Create buffer for angle data array
+            var angleBuffer = gl.createBuffer();
+            gl.bindBuffer(gl.ARRAY_BUFFER, angleBuffer);
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(angleData), gl.STATIC_DRAW);
+    
+            // Get vAngle parameter from VS, and set its value...?
+            var vertexAngle = gl.getAttribLocation(program, "vAngle");
+            gl.bindBuffer(gl.ARRAY_BUFFER, angleBuffer);
+            gl.vertexAttribPointer(vertexAngle, 1, gl.FLOAT, false, 0, 0);
+            gl.enableVertexAttribArray(vertexAngle);
+            
+            // Get uniform values from VS, in this case the view matrices
+            projection = gl.getUniformLocation(program, "uProjection");
+            modelView = gl.getUniformLocation(program, "uModelView");
+            uRadius = gl.getUniformLocation(program, "uRadius");
+            
+            gl.useProgram(program);
+            
+            draw();
+        }
+        else {
+            console.log("Unable to get webGL context");
+        }
+    };
+    function draw() {
+        radius = parseFloat($("radiusBox").value);
+        if (!radius && isNaN(radius)) {
+            alert("Enter numerals only!");
+        }
+        else {
+            // Do some dark magic with the matrices
+            // (means that I dont quite get this part)
+            pMatrix.makeOrthographic( -7.0, 7.0, 7.0, -7.0, -0.1, 2.0);
+            mvMatrix.identity();
+            
+            // Set up viewport and clear canvas
+            gl.viewport(0, 0, canvas.width, canvas.height);
+            gl.clearColor(0.0, 0.15, 0.2, 1.0);
+            gl.clear(gl.COLOR_BUFFER_BIT);
+            
+            // update uniforms in shader program
+            gl.uniformMatrix4fv( projection, false, pMatrix.flattenToArray([]));
+            gl.uniformMatrix4fv( modelView, false, mvMatrix.flattenToArray([]));
+            gl.uniform1f(uRadius, radius);
+            
+            // Draw
+            gl.drawArrays(drawMode, 0, amountOfPoints);
+        }
+    }
+    function setMode(m) {
+        drawMode = gl[m];
+    }
+    
+    function makeShader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+            alert("Unable to compile shader: "+ gl.getShaderInfoLog(s));
+        }
+        return s;
+    }
+    </script>
+    </body>
+</html>

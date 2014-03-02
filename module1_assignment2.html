@@ -239,7 +239,7 @@ By: Juhani Koivulainen
         ball: {
             getSpherePosition: function(s, i, max) {
                 var x, y, z,
-                    scale = 0.01 + Math.sin(colorSine + (i / max) * Math.PI * 3) * 2,
+                    scale = .9 + Math.sin(colorSine + (i / max) * Math.PI * 3),
                     amplitude = 20 + Math.sin((i / max) * Math.PI) * 90,
                     color = new THREE.Color(
                         .3,
