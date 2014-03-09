@@ -1,0 +1,302 @@
+<!DOCTYPE html>
+<!-- 
+3DGP14 MODULE 3
+ASSIGNMENT 1
+By: Juhani Koivulainen
+-->
+<html>
+    <head>
+        <title>Skybox</title>
+        <style>
+            body{background: #777;color: #FFF; margin: 0px;}
+            canvas{top: 0px; left: 0px;border-bottom: 2px solid #FFF;}
+        </style>
+    </head>
+    <body>
+        <span id="loadingText">Loading 0%<br></span>
+        <canvas id="can" width="800" height="600">Your browser does not support HTML5 canvas element</canvas><br>
+        Use arrow keys to look around
+    <script src="./lib/three.min.js"></script>
+    <script id="shader-vs" type="x-shader/x-vertex">
+    uniform mat4 uProjection;
+    uniform mat4 uModelView;
+    attribute vec3 aVertexPos;
+    attribute vec2 aTextureCoord;
+    varying highp vec2 vTextureCoord;
+    
+    void main(void) {
+        gl_Position = uProjection * uModelView * vec4(aVertexPos, 1.0);
+        vTextureCoord = aTextureCoord;
+    }
+    
+    </script>
+    <script id="shader-fs" type="x-shader/x-fragment">
+    precision highp float;
+    varying highp vec2 vTextureCoord;
+    uniform sampler2D uSampler;
+
+    void main(void) {
+        gl_FragColor = texture2D(uSampler, vec2(vTextureCoord.s, vTextureCoord.t));
+    } 
+    </script>
+    <script>
+    // Set up our main variables
+    var $ = function(id) {return document.getElementById(id);},
+        canvas = $("can"),
+        loadingText = $("loadingText"),
+        images = {},
+        totalImgs = 0,
+        loadedImgs = 0,
+        up = down = left = right = false,
+        xAngle = yAngle = 0,
+        pMatrix = new THREE.Matrix4(),
+        mvMatrix = new THREE.Matrix4(),
+        vsSource = $("shader-vs").innerHTML,
+        fsSource = $("shader-fs").innerHTML,
+        gl, vs, fs, program, skybox,
+        xRotationMatrix, yRotationMatrix, projection, modelView, samplerUniform;
+        
+    function loadImg(name, src) {
+        var img = new Image();
+        totalImgs += 1;
+        img.onload = function() {
+            images[name] = img;
+            loadedImgs += 1;
+            loadingText.innerHTML = "Loading "+ Math.floor((loadedImgs/ totalImgs) * 100).toString() +"%<br>";
+            if (loadedImgs === totalImgs) {
+                //loadingText.style.display = "none";
+                document.body.removeChild(loadingText);
+                runApp();
+            }
+        }
+        img.src = src;
+    }
+    // Initialization
+    window.onload = function() {
+        gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
+        if (gl) {
+            // Load textures
+            loadImg("posX", "textures/posx.jpg");
+            loadImg("posY", "textures/posy.jpg");
+            loadImg("posZ", "textures/posz.jpg");
+            loadImg("negX", "textures/negx.jpg");
+            loadImg("negY", "textures/negy.jpg");
+            loadImg("negZ", "textures/negz.jpg");
+            canvas.width = window.innerWidth;
+            canvas.height = window.innerHeight * .95;
+        }
+        else {
+            console.log("Could not initialize WebGL");
+        }
+    };
+    
+    // Skybox constructor
+    function Skybox() {
+        var imageArray = [images.posX, images.negX, images.posY, images.negY, images.negZ, images.posZ], i;
+        this.facePlanes = [];
+        this.textures = [];
+        this.vertexData = [];
+        this.texturePositionData = [];
+        this.vertexIndices = [];
+        for (i = 0; i < 6; i++) {
+            var texture = gl.createTexture();
+            gl.bindTexture(gl.TEXTURE_2D, texture);
+            gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, imageArray[i]);
+            
+            // Apply filters
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+            
+            // This wraps the texture so that edges are tightly together to prevent edge tearing
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+            //gl.generateMipmap(gl.TEXTURE_2D); // Didn't notice any visible improvement in this app
+            gl.bindTexture(gl.TEXTURE_2D, null);
+            this.textures.push(texture);
+        }
+        
+        // Vertex positions for each face
+        this.vertexPositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
+        this.vertexData = [
+            // Front face
+            -1.0, -1.0,  1.0,
+             1.0, -1.0,  1.0,
+             1.0,  1.0,  1.0,
+            -1.0,  1.0,  1.0,
+
+            // Back face
+            -1.0, -1.0, -1.0,
+            -1.0,  1.0, -1.0,
+             1.0,  1.0, -1.0,
+             1.0, -1.0, -1.0,
+
+            // Top face
+            -1.0,  1.0, -1.0,
+            -1.0,  1.0,  1.0,
+             1.0,  1.0,  1.0,
+             1.0,  1.0, -1.0,
+
+            // Bottom face
+            -1.0, -1.0, -1.0,
+             1.0, -1.0, -1.0,
+             1.0, -1.0,  1.0,
+            -1.0, -1.0,  1.0,
+
+            // Right face
+             1.0, -1.0, -1.0,
+             1.0,  1.0, -1.0,
+             1.0,  1.0,  1.0,
+             1.0, -1.0,  1.0,
+
+            // Left face
+            -1.0, -1.0, -1.0,
+            -1.0, -1.0,  1.0,
+            -1.0,  1.0,  1.0,
+            -1.0,  1.0, -1.0
+        ];
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertexData), gl.STATIC_DRAW);
+        
+        // Texture coordinates for each face. Setting the same coordinates to each seems to work nicely.
+        this.texturePositionBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texturePositionBuffer);
+        for (i = 0; i < 6; i++) {
+            this.texturePositionData.push(
+                0.0, 0.0,
+                1.0, 0.0,
+                1.0, 1.0,
+                0.0, 1.0
+            );
+        }
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.texturePositionData), gl.STATIC_DRAW);
+        
+        // Index buffer to determine triangles for each face
+        this.indexBuffer = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        for (i = 0; i < 6 * 4; i += 4) {
+            this.vertexIndices.push(
+                i, i+1, i+2, // first triangle
+                i, i+2, i+3  // second triangle
+            );
+        }
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.vertexIndices), gl.STATIC_DRAW);
+        
+        // Get and set shader attributes for vertex and texture positions
+        this.vertexPosAttrib = gl.getAttribLocation(program, "aVertexPos");
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.vertexPositionBuffer);
+        gl.vertexAttribPointer(this.vertexPosAttrib, 3, gl.FLOAT, false, 0, 0);
+        
+        this.texturePosAttrib = gl.getAttribLocation(program, "aTextureCoord");
+        gl.bindBuffer(gl.ARRAY_BUFFER, this.texturePositionBuffer);
+        gl.vertexAttribPointer(this.texturePosAttrib, 2, gl.FLOAT, false, 0, 0);
+        
+        // Enable the arrays
+        gl.enableVertexAttribArray(this.vertexPosAttrib);
+        gl.enableVertexAttribArray(this.texturePosAttrib);
+    }
+    Skybox.prototype.draw = function() {
+        // Bind the index buffer and draw all elements
+        // binding and drawing is done 6 times because each side has different texture
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        for (var i = 0, max = this.textures.length; i < max; i++) {
+            gl.bindTexture(gl.TEXTURE_2D, this.textures[i]);
+            gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, i * 12);
+        }
+    }
+    function runApp() {
+        // Init program & shaders
+        vs = makeShader(gl.VERTEX_SHADER, vsSource);
+        fs = makeShader(gl.FRAGMENT_SHADER, fsSource);
+        program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            alert("Unable to initialize shader program");
+        }
+        
+        // Get uniform values
+        projection = gl.getUniformLocation(program, "uProjection");     // projection matrix
+        modelView = gl.getUniformLocation(program, "uModelView");       // model view matrix
+        samplerUniform = gl.getUniformLocation(program, "uSampler");    // texture sampler
+        
+        gl.useProgram(program);
+        
+        // Set perspective projection
+        // fov (in degrees), aspect ratio, near, far
+        pMatrix.makePerspective(45, canvas.width / canvas.height, 0.1, 2.0);
+        
+        // Temp variables for matrix multiplying
+        xRotationMatrix = mvMatrix.clone();
+        yRotationMatrix = mvMatrix.clone();
+        
+        // Set viewport
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        
+        skybox = new Skybox();
+        loop();
+    }
+    
+    function loop() {
+        gl.clearColor(0.0, 0.15, 0.2, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        
+        // Update angle, cap it to 2*PI
+        if (up)     xAngle = (xAngle - 0.01) % (2 * Math.PI);
+        if (down)   xAngle = (xAngle + 0.01) % (2 * Math.PI);
+        if (left)   yAngle = (yAngle - 0.01) % (2 * Math.PI);
+        if (right)  yAngle = (yAngle + 0.01) % (2 * Math.PI);
+        
+        // Calculate rotation matrices. This was the only method that I got to work without
+        // making the rotation go crazy
+        xRotationMatrix.makeRotationX(xAngle);
+        yRotationMatrix.makeRotationY(yAngle);
+        mvMatrix.multiplyMatrices(xRotationMatrix, yRotationMatrix);
+        
+        // update uniforms in shader program
+        gl.uniformMatrix4fv(projection, false, pMatrix.flattenToArray([]));
+        gl.uniformMatrix4fv(modelView, false, mvMatrix.flattenToArray([]));
+        gl.uniform1i(samplerUniform, 0);
+
+        skybox.draw();
+        requestAnimationFrame(loop);
+    }
+    
+    function makeShader(type, src) {
+        var s = gl.createShader(type);
+        gl.shaderSource(s, src);
+        gl.compileShader(s);
+        if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) {
+            alert("Unable to compile shader: "+ gl.getShaderInfoLog(s));
+        }
+        return s;
+    }
+    // Handle window resizing
+    window.onresize = function() {
+        canvas.width = window.innerWidth;
+        canvas.height = window.innerHeight * .95;
+        if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+    
+    // Handle keypress events
+    window.onkeydown = function(e) {
+        switch (e.keyCode) {
+            case 38: up     = true; e.preventDefault(); break;
+            case 40: down   = true; e.preventDefault(); break;
+            case 37: left   = true; e.preventDefault(); break;
+            case 39: right  = true; e.preventDefault(); break;
+        }
+    }
+    window.onkeyup = function(e) {
+        switch (e.keyCode) {
+            case 38: up     = false; break;
+            case 40: down   = false; break;
+            case 37: left   = false; break;
+            case 39: right  = false; break;
+        }
+    }
+    </script>
+    </body>
+</html>

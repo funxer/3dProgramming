@@ -94,7 +94,6 @@ By: Juhani Koivulainen
             // Create buffer for angle data array
             var angleBuffer = gl.createBuffer();
             gl.bindBuffer(gl.ARRAY_BUFFER, angleBuffer);
-            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(angleData), gl.STATIC_DRAW);
     
             // Get vAngle parameter from VS, and set its value...?
             var vertexAngle = gl.getAttribLocation(program, "vAngle");
@@ -115,30 +114,43 @@ By: Juhani Koivulainen
             console.log("Unable to get webGL context");
         }
     };
+    var offset = 0;
     function draw() {
-        radius = parseFloat($("radiusBox").value);
+        //radius = parseFloat($("radiusBox").value);
         if (!radius || isNaN(radius)) {
             alert("Enter numerals only!");
         }
         else {
+            angleData = [];
             // Do some dark magic with the matrices
             // (means that I dont quite get this part)
             pMatrix.makeOrthographic(-7.0, 7.0, 7.0, -7.0, -0.1, 2.0);
             mvMatrix.identity();
+            
+            offset = (offset + 0.01) % (2 * Math.PI);
+            radius = !isNaN(parseFloat($("radiusBox").value)) ? parseFloat($("radiusBox").value) + Math.sin(offset) * parseFloat($("radiusBox").value) * .2 : 4.0;
+            
+            // Create angle data that will be sent to VS
+            for (var i = 0; i < amountOfPoints; i++) {
+                angleData.push(offset + (i / amountOfPoints) * 2 * Math.PI);
+            }
+            gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(angleData), gl.DYNAMIC_DRAW);
             
             // Set up viewport and clear canvas
             gl.viewport(0, 0, canvas.width, canvas.height);
             gl.clearColor(0.0, 0.15, 0.2, 1.0);
             gl.clear(gl.COLOR_BUFFER_BIT);
             
+
             // update uniforms in shader program
-            gl.uniformMatrix4fv(projection, false, pMatrix.flattenToArray([]));
-            gl.uniformMatrix4fv(modelView, false, mvMatrix.flattenToArray([]));
+            gl.uniformMatrix4fv( projection, false, pMatrix.flattenToArray([]));
+            gl.uniformMatrix4fv( modelView, false, mvMatrix.flattenToArray([]));
             gl.uniform1f(uRadius, radius);
             
             // Draw
             gl.drawArrays(drawMode, 0, amountOfPoints);
         }
+        requestAnimationFrame(draw);
     }
     function setMode(m) {
         drawMode = gl[m];
