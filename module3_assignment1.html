@@ -56,22 +56,7 @@ By: Juhani Koivulainen
         gl, vs, fs, program, skybox,
         xRotationMatrix, yRotationMatrix, projection, modelView, samplerUniform;
         
-    function loadImg(name, src) {
-        var img = new Image();
-        totalImgs += 1;
-        img.onload = function() {
-            images[name] = img;
-            loadedImgs += 1;
-            loadingText.innerHTML = "Loading "+ Math.floor((loadedImgs/ totalImgs) * 100).toString() +"%<br>";
-            if (loadedImgs === totalImgs) {
-                //loadingText.style.display = "none";
-                document.body.removeChild(loadingText);
-                runApp();
-            }
-        }
-        img.src = src;
-    }
-    // Initialization
+    // Main initialization
     window.onload = function() {
         gl = canvas.getContext("webgl") || canvas.getContext("experimental-webgl");
         if (gl) {
@@ -90,10 +75,86 @@ By: Juhani Koivulainen
         }
     };
     
+    // Function for loading images to cache. It also launches the application once every image has loaded
+    function loadImg(name, src) {
+        var img = new Image();
+        totalImgs += 1;
+        img.onload = function() {
+            images[name] = img;
+            loadedImgs += 1;
+            loadingText.innerHTML = "Loading "+ Math.floor((loadedImgs/ totalImgs) * 100).toString() +"%<br>";
+            if (loadedImgs === totalImgs) {
+                document.body.removeChild(loadingText);
+                runApp();
+            }
+        }
+        img.src = src;
+    }
+    
+    // App initialization
+    function runApp() {
+        // Init program & shaders
+        vs = makeShader(gl.VERTEX_SHADER, vsSource);
+        fs = makeShader(gl.FRAGMENT_SHADER, fsSource);
+        program = gl.createProgram();
+        gl.attachShader(program, vs);
+        gl.attachShader(program, fs);
+        gl.linkProgram(program);
+        
+        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+            alert("Unable to initialize shader program");
+        }
+        gl.useProgram(program);
+        
+        // Get uniform values
+        projection = gl.getUniformLocation(program, "uProjection");     // projection matrix
+        modelView = gl.getUniformLocation(program, "uModelView");       // model view matrix
+        samplerUniform = gl.getUniformLocation(program, "uSampler");    // texture sampler
+        
+        // Set perspective projection
+        // fov (in degrees), aspect ratio, near, far
+        pMatrix.makePerspective(45, canvas.width / canvas.height, 0.1, 2.0);
+        
+        // Temp variables for matrix multiplying
+        xRotationMatrix = mvMatrix.clone();
+        yRotationMatrix = mvMatrix.clone();
+        
+        // Set viewport
+        gl.viewport(0, 0, canvas.width, canvas.height);
+        
+        // Create the skybox and start loop
+        skybox = new Skybox();
+        loop();
+    }
+    
+    function loop() {
+        gl.clearColor(0.0, 0.15, 0.2, 1.0);
+        gl.clear(gl.COLOR_BUFFER_BIT);
+        
+        // Update angle, cap it to 2*PI
+        if (up)     xAngle = (xAngle - 0.01) % (2 * Math.PI);
+        if (down)   xAngle = (xAngle + 0.01) % (2 * Math.PI);
+        if (left)   yAngle = (yAngle - 0.01) % (2 * Math.PI);
+        if (right)  yAngle = (yAngle + 0.01) % (2 * Math.PI);
+        
+        // Calculate rotation matrices. This was the only method that I got to work without
+        // making the rotation go crazy
+        xRotationMatrix.makeRotationX(xAngle);
+        yRotationMatrix.makeRotationY(yAngle);
+        mvMatrix.multiplyMatrices(xRotationMatrix, yRotationMatrix);
+        
+        // update uniforms in shader program
+        gl.uniformMatrix4fv(projection, false, pMatrix.flattenToArray([]));
+        gl.uniformMatrix4fv(modelView, false, mvMatrix.flattenToArray([]));
+        gl.uniform1i(samplerUniform, 0);
+
+        skybox.draw();
+        requestAnimationFrame(loop);
+    }
+    
     // Skybox constructor
     function Skybox() {
         var imageArray = [images.posX, images.negX, images.posY, images.negY, images.negZ, images.posZ], i;
-        this.facePlanes = [];
         this.textures = [];
         this.vertexData = [];
         this.texturePositionData = [];
@@ -158,7 +219,8 @@ By: Juhani Koivulainen
         ];
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertexData), gl.STATIC_DRAW);
         
-        // Texture coordinates for each face. Setting the same coordinates to each seems to work nicely.
+        // This tells each texture to use their full width and height
+        // for each texture, that's why I push same data 6 times
         this.texturePositionBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ARRAY_BUFFER, this.texturePositionBuffer);
         for (i = 0; i < 6; i++) {
@@ -171,7 +233,8 @@ By: Juhani Koivulainen
         }
         gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.texturePositionData), gl.STATIC_DRAW);
         
-        // Index buffer to determine triangles for each face
+        // Index buffer to determine triangles for each face. Face is made up from
+        // 2 triangles so here we define which vertices belong to them
         this.indexBuffer = gl.createBuffer();
         gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
         for (i = 0; i < 6 * 4; i += 4) {
@@ -198,71 +261,12 @@ By: Juhani Koivulainen
     Skybox.prototype.draw = function() {
         // Bind the index buffer and draw all elements
         // binding and drawing is done 6 times because each side has different texture
-        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer);
+        //gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this.indexBuffer); // Commented this out because WebGL inspector said it was redundant...?
         for (var i = 0, max = this.textures.length; i < max; i++) {
             gl.bindTexture(gl.TEXTURE_2D, this.textures[i]);
             gl.drawElements(gl.TRIANGLES, 6, gl.UNSIGNED_SHORT, i * 12);
         }
-    }
-    function runApp() {
-        // Init program & shaders
-        vs = makeShader(gl.VERTEX_SHADER, vsSource);
-        fs = makeShader(gl.FRAGMENT_SHADER, fsSource);
-        program = gl.createProgram();
-        gl.attachShader(program, vs);
-        gl.attachShader(program, fs);
-        gl.linkProgram(program);
-        
-        if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-            alert("Unable to initialize shader program");
-        }
-        
-        // Get uniform values
-        projection = gl.getUniformLocation(program, "uProjection");     // projection matrix
-        modelView = gl.getUniformLocation(program, "uModelView");       // model view matrix
-        samplerUniform = gl.getUniformLocation(program, "uSampler");    // texture sampler
-        
-        gl.useProgram(program);
-        
-        // Set perspective projection
-        // fov (in degrees), aspect ratio, near, far
-        pMatrix.makePerspective(45, canvas.width / canvas.height, 0.1, 2.0);
-        
-        // Temp variables for matrix multiplying
-        xRotationMatrix = mvMatrix.clone();
-        yRotationMatrix = mvMatrix.clone();
-        
-        // Set viewport
-        gl.viewport(0, 0, canvas.width, canvas.height);
-        
-        skybox = new Skybox();
-        loop();
-    }
-    
-    function loop() {
-        gl.clearColor(0.0, 0.15, 0.2, 1.0);
-        gl.clear(gl.COLOR_BUFFER_BIT);
-        
-        // Update angle, cap it to 2*PI
-        if (up)     xAngle = (xAngle - 0.01) % (2 * Math.PI);
-        if (down)   xAngle = (xAngle + 0.01) % (2 * Math.PI);
-        if (left)   yAngle = (yAngle - 0.01) % (2 * Math.PI);
-        if (right)  yAngle = (yAngle + 0.01) % (2 * Math.PI);
-        
-        // Calculate rotation matrices. This was the only method that I got to work without
-        // making the rotation go crazy
-        xRotationMatrix.makeRotationX(xAngle);
-        yRotationMatrix.makeRotationY(yAngle);
-        mvMatrix.multiplyMatrices(xRotationMatrix, yRotationMatrix);
-        
-        // update uniforms in shader program
-        gl.uniformMatrix4fv(projection, false, pMatrix.flattenToArray([]));
-        gl.uniformMatrix4fv(modelView, false, mvMatrix.flattenToArray([]));
-        gl.uniform1i(samplerUniform, 0);
-
-        skybox.draw();
-        requestAnimationFrame(loop);
-    }
+    };
     
     function makeShader(type, src) {
         var s = gl.createShader(type);
@@ -279,7 +283,6 @@ By: Juhani Koivulainen
         canvas.height = window.innerHeight * .95;
         if (gl) gl.viewport(0, 0, canvas.width, canvas.height);
     }
-    
     // Handle keypress events
     window.onkeydown = function(e) {
         switch (e.keyCode) {
