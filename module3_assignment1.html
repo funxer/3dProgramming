@@ -115,6 +115,10 @@ By: Juhani Koivulainen
         // fov (in degrees), aspect ratio, near, far
         pMatrix.makePerspective(45, canvas.width / canvas.height, 0.1, 2.0);
         
+        // These uniforms need to be set only once so I moved them here from the loop
+        gl.uniformMatrix4fv(projection, false, pMatrix.flattenToArray([]));
+        gl.uniform1i(samplerUniform, 0);
+        
         // Temp variables for matrix multiplying
         xRotationMatrix = mvMatrix.clone();
         yRotationMatrix = mvMatrix.clone();
@@ -143,10 +147,8 @@ By: Juhani Koivulainen
         yRotationMatrix.makeRotationY(yAngle);
         mvMatrix.multiplyMatrices(xRotationMatrix, yRotationMatrix);
         
-        // update uniforms in shader program
-        gl.uniformMatrix4fv(projection, false, pMatrix.flattenToArray([]));
+        // update mvMatrix uniform to update rotation
         gl.uniformMatrix4fv(modelView, false, mvMatrix.flattenToArray([]));
-        gl.uniform1i(samplerUniform, 0);
 
         skybox.draw();
         requestAnimationFrame(loop);
