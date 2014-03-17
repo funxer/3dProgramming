@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<!-- 
+3DGP14 MODULE 4
+ASSIGNMENT 1
+By: Juhani Koivulainen
+-->
+<html>
+    <head>
+        <title>Waving hand</title>
+        <style>
+            body {
+                margin: 0px;
+                background: #777;
+                color: #FFF;
+                font-family: arial, serif, sans-serif;
+                font-size: 16px;
+                -ms-user-select: none;
+                -moz-user-select: none;
+                -webkit-user-select: none;
+            }
+            #container {
+                top: 0px; left: 0px;
+                border-bottom: 3px solid #FFF;
+            }
+        </style>
+    </head>
+    <body>
+        <!--<canvas id="can" width="800" height="600">Your browser does not support HTML5 canvas element</canvas>-->
+        <div id="container"></div><br>Use WASD to move, click and hold to look. LEFT and RIGHT arrow keys to adjust wave amplitude.
+        <span id="debug"></span>
+    <script src="lib/three.min.js"></script>
+    <script>
+    // General vars
+    var $ = function(id) {return document.getElementById(id);},
+        // DOM stuff
+        width = window.innerWidth,
+        height = window.innerHeight * .95,
+        container = $("container"),
+
+        // App stuff
+        timer = new Timer(),
+        mouseDown = false,
+        prevX = 0, 
+        prevY = 0,
+        up = down = left = right = false,
+        handAngle = 0,
+        waveAmplitude = Math.PI / 16,
+        movementSpeed = 200,
+        velocity = new THREE.Vector3(),
+        shoulder, finger1, finger2, finger3, palm, lower, elbow, upper,
+        
+        // webGL stuff
+        renderer = new THREE.WebGLRenderer(),
+        camera = new THREE.PerspectiveCamera(50, width / height, 1, 1000),
+        camObject = new THREE.Object3D(),
+        scene = new THREE.Scene();
+        
+    // Initialization
+    window.onload = function() {
+        var randomMaterial = function() { return new THREE.MeshBasicMaterial({color: Math.random() * 0xFFFFFF }); },
+            sphereGeometry = new THREE.SphereGeometry(10, 32, 32);  // for the joints
+            rockTexture = THREE.ImageUtils.loadTexture("rock.jpg");
+            
+        // Make the texture repeat
+        rockTexture.wrapS = THREE.RepeatWrapping;
+        rockTexture.wrapT = THREE.RepeatWrapping;
+        rockTexture.repeat.set(20, 20);
+        
+        // Setup renderer
+        renderer.setClearColor(0x11212A, 1);
+        renderer.setSize(width, height);
+        container.style.width = width +"px";
+        container.style.height = height +"px";
+        container.appendChild(renderer.domElement);
+        
+        // Ground
+        var ground = new THREE.Mesh(new THREE.CubeGeometry(600, 1, 600, 1, 1, 1), new THREE.MeshBasicMaterial({ map: rockTexture, trasparent: true }));
+        scene.add(ground);
+        
+        // Create the hand
+        thumb    = new THREE.Mesh(new THREE.CubeGeometry(20, 3, 3), randomMaterial());
+        finger1  = new THREE.Mesh(new THREE.CubeGeometry(5, 20, 5), randomMaterial());
+        finger2  = new THREE.Mesh(new THREE.CubeGeometry(5, 20, 5), randomMaterial());
+        finger3  = new THREE.Mesh(new THREE.CubeGeometry(5, 20, 5), randomMaterial());
+        palm     = new THREE.Mesh(new THREE.CubeGeometry(25, 20, 5), randomMaterial());
+        lower    = new THREE.Mesh(new THREE.CubeGeometry(10, 50, 10), randomMaterial());
+        elbow    = new THREE.Mesh(sphereGeometry, randomMaterial());
+        upper    = new THREE.Mesh(new THREE.CubeGeometry(10, 50, 10), randomMaterial());
+        shoulder = new THREE.Mesh(sphereGeometry, randomMaterial());
+        
+        // Adjust positions for each part
+        shoulder.position.y = 10;
+        upper.position.y = 30;
+        elbow.position.y = 25;
+        lower.position.y = 30;
+        palm.position.y = 35;
+        finger1.position.x = -10;
+        finger1.position.y = 20;
+        finger2.position.x = 0;
+        finger2.position.y = 20;
+        finger3.position.x = 10;
+        finger3.position.y = 20;
+        thumb.position.x = -20;
+        
+        // "attach" parts by nesting them, starting from the last part
+        palm.add(thumb);
+        palm.add(finger1);
+        palm.add(finger2);
+        palm.add(finger3);
+        lower.add(palm);
+        elbow.add(lower);
+        upper.add(elbow);
+        shoulder.add(upper);
+        scene.add(shoulder);
+        
+        // Light
+        var pointLight = new THREE.PointLight(0xFFFFFF);
+        scene.add(pointLight);
+        
+        // camera
+        camObject.add(camera);
+        camObject.position.y = 20;
+        camObject.position.z = 200;
+        scene.add(camObject);
+        
+        // Start!
+        loop();
+    }
+    
+    function loop() {
+        var dt = timer.tick(),
+            handRotation = Math.sin(handAngle) * waveAmplitude,
+            palmRotation = Math.sin(handAngle * 2) * waveAmplitude * 2;
+            
+        // Update angle and cap it to 2 * PI
+        handAngle = (handAngle + dt) % (2 * Math.PI);
+        
+        // Movement
+        if (up) {
+            velocity.z = -movementSpeed * dt;
+            camObject.translateZ(velocity.z);
+        }
+        if (down) {
+            velocity.z = movementSpeed * dt;
+            camObject.translateZ(velocity.z);
+        }
+        if (left) {
+            velocity.x = -movementSpeed * dt;
+            camObject.translateX(velocity.x);
+        }
+        if (right) {
+            velocity.x = movementSpeed * dt;
+            camObject.translateX(velocity.x);
+        }
+        
+        // Traverse trough every child inside shoulder (first parent) and rotate it.
+        // Last child will have all transformations from every parent applied.
+        shoulder.traverse(function (obj) {
+            obj.rotation.z = handRotation;
+            obj.position.x -= Math.cos(handAngle) * 3 * dt; // Quick and dirty fix for position offset
+        });
+        // Do the same for palm and it's children, but rotate them in other direction
+        palm.traverse(function (obj) {
+            obj.rotation.x = palmRotation;
+            obj.position.z += Math.cos(handAngle * 2) * 9 * dt; // Quick and dirty fix for position offset
+        });
+        
+        // Lock thumbs z-position so it doesn't wonder off
+        thumb.position.z = 0; 
+        
+        // Render & request next frame
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+    }
+    
+    // Game timer to determine deltatime. Copied from:
+    // http://blog.sethladd.com/2011/05/source-code-slides-and-video-for-html5.html
+    function Timer () {
+        this.gameTime = 0;
+        this.maxStep = 0.05;
+        this.wallLastTime = 0;
+    }
+    Timer.prototype.tick = function () {
+        var wallCurrent = window.performance && window.performance.now ? window.performance.now() : new Date().getTime();
+        var wallDelta = (wallCurrent - this.wallLastTime) / 1000;
+        this.wallLastTime = wallCurrent;
+        var gameDelta = Math.min(wallDelta, this.maxStep);
+        this.gameTime += gameDelta;
+        return gameDelta;
+    };
+    
+    // Input events
+    container.onmousedown = function(e) {
+        mouseDown = true;
+    };
+    window.onmouseup = function(e) {
+        mouseDown = false;
+    };
+    window.onmousemove = function(e) {
+        if (mouseDown) {
+            var rotY = (e.pageX - prevX) * 0.003;
+            var rot = (e.pageY - prevY) * 0.003;
+            camObject.rotation.y -= rotY;
+            camera.rotation.x -= rot;
+        }
+        prevY = e.pageY;
+        prevX = e.pageX;
+    };
+    window.onkeydown = function(e) {
+        switch (e.keyCode) {
+            case 87: up = true;      break;  // W
+            case 83: down = true;    break;  // S  
+            case 65: left = true;    break;  // A
+            case 68: right = true;   break;  // D
+        }
+    };
+    window.onkeyup = function(e) {
+        switch (e.keyCode) {
+            case 87: up = false;      break;    
+            case 83: down = false;    break;
+            case 65: left = false;    break;
+            case 68: right = false;   break;
+            // Left and right arrow keys
+            case 37: if (waveAmplitude < .4) waveAmplitude += 0.1;  break;
+            case 39: if (waveAmplitude > .1) waveAmplitude -= 0.1;  break;
+        }
+    };
+    </script>
+    </body>
+</html>
