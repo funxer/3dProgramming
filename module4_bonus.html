@@ -44,17 +44,64 @@ By: Juhani Koivulainen
         prevY = 0,
         up = down = left = right = false,
         handAngle = 0,
-        waveAmplitude = Math.PI / 16,
+        waveAmplitude = .02,
         movementSpeed = 200,
         velocity = new THREE.Vector3(),
-        shoulder, finger1, finger2, finger3, palm, lower, elbow, upper,
+        arms = [],
         
         // webGL stuff
         renderer = new THREE.WebGLRenderer(),
         camera = new THREE.PerspectiveCamera(50, width / height, 1, 1000),
         camObject = new THREE.Object3D(),
         scene = new THREE.Scene();
+    
+    function Arm(pos, rot, scale) {
+        var randomMaterial = function() { return new THREE.MeshBasicMaterial({color: Math.random() * 0xFFFFFF }); },
+            sphereGeometry = new THREE.SphereGeometry(10, 32, 32);
+            
+        this.originalPosition = pos;
+        this.originalRotation = rot;
         
+        this.thumb    = new THREE.Mesh(new THREE.CubeGeometry(20, 3, 3), randomMaterial());
+        this.finger1  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger2  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger3  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger4  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.palm     = new THREE.Mesh(new THREE.CubeGeometry(30, 30, 14), randomMaterial());
+        this.lower    = new THREE.Mesh(new THREE.CubeGeometry(2, 50, 2), randomMaterial());
+        this.elbow    = new THREE.Mesh(sphereGeometry, randomMaterial());
+        this.upper    = new THREE.Mesh(new THREE.CubeGeometry(2, 50, 2), randomMaterial());
+        this.shoulder = new THREE.Mesh(sphereGeometry, randomMaterial());
+        
+        // Adjust positions for each part
+        this.shoulder.position.y = 10;
+        this.upper.position.y = 20;
+        this.elbow.position.y = 25;
+        this.lower.position.y = 30;
+        this.palm.position.y = 35;
+        this.finger1.position.x = -12;
+        this.finger1.position.y = 26;
+        this.finger2.position.x = -4;
+        this.finger2.position.y = 26;
+        this.finger3.position.x = 4;
+        this.finger3.position.y = 26;
+        this.finger4.position.x = 12;
+        this.finger4.position.y = 26;
+        this.thumb.position.x = -20;
+        this.shoulder.position = pos;
+        this.shoulder.rotation = rot;
+        this.shoulder.scale.set(scale, scale, scale);
+        
+        this.palm.add(this.thumb);
+        this.palm.add(this.finger1);
+        this.palm.add(this.finger2);
+        this.palm.add(this.finger3);
+        this.palm.add(this.finger4);
+        this.lower.add(this.palm);
+        this.elbow.add(this.lower);
+        this.upper.add(this.elbow);
+        this.shoulder.add(this.upper);
+    }
     // Initialization
     window.onload = function() {
         var randomMaterial = function() { return new THREE.MeshBasicMaterial({color: Math.random() * 0xFFFFFF }); },
@@ -78,40 +125,16 @@ By: Juhani Koivulainen
         scene.add(ground);
         
         // Create the hand
-        thumb    = new THREE.Mesh(new THREE.CubeGeometry(20, 3, 3), randomMaterial());
-        finger1  = new THREE.Mesh(new THREE.CubeGeometry(5, 20, 5), randomMaterial());
-        finger2  = new THREE.Mesh(new THREE.CubeGeometry(5, 20, 5), randomMaterial());
-        finger3  = new THREE.Mesh(new THREE.CubeGeometry(5, 20, 5), randomMaterial());
-        palm     = new THREE.Mesh(new THREE.CubeGeometry(25, 20, 5), randomMaterial());
-        lower    = new THREE.Mesh(new THREE.CubeGeometry(10, 50, 10), randomMaterial());
-        elbow    = new THREE.Mesh(sphereGeometry, randomMaterial());
-        upper    = new THREE.Mesh(new THREE.CubeGeometry(10, 50, 10), randomMaterial());
-        shoulder = new THREE.Mesh(sphereGeometry, randomMaterial());
+        arms.push(new Arm(new THREE.Vector3(0,30,0), new THREE.Euler(0, 0, -Math.PI/2), 0.2));
+        arms.push(new Arm(new THREE.Vector3(0,30,0), new THREE.Euler(Math.PI, 0, Math.PI/2), 0.18));
+        arms.push(new Arm(new THREE.Vector3(0,30,0), new THREE.Euler(0, 0, 0), 0.18));
+        arms.push(new Arm(new THREE.Vector3(0,30,0), new THREE.Euler(-Math.PI, 0, 0), 0.18));
+        arms.push(new Arm(new THREE.Vector3(0,30,0), new THREE.Euler(0, Math.PI / 2, Math.PI / 2), 0.18));
+        arms.push(new Arm(new THREE.Vector3(0,30,0), new THREE.Euler(0, -Math.PI / 2, Math.PI / 2), 0.18));
         
-        // Adjust positions for each part
-        shoulder.position.y = 5;
-        upper.position.y = 30;
-        elbow.position.y = 25;
-        lower.position.y = 30;
-        palm.position.y = 35;
-        finger1.position.x = -10;
-        finger1.position.y = 20;
-        finger2.position.x = 0;
-        finger2.position.y = 20;
-        finger3.position.x = 10;
-        finger3.position.y = 20;
-        thumb.position.x = -20;
-        shoulder.scale.set(0.4, 0.4, 0.4);
-        // "attach" parts by nesting them, starting from the last part
-        palm.add(thumb);
-        palm.add(finger1);
-        palm.add(finger2);
-        palm.add(finger3);
-        lower.add(palm);
-        elbow.add(lower);
-        upper.add(elbow);
-        shoulder.add(upper);
-        scene.add(shoulder);
+        for (var i = 0; i < arms.length; i++) {
+            scene.add(arms[i].shoulder);
+        }
         
         // Light
         var pointLight = new THREE.PointLight(0xFFFFFF);
@@ -128,10 +151,7 @@ By: Juhani Koivulainen
     }
     
     function loop() {
-        var dt = timer.tick(),
-            handRotation = Math.sin(handAngle) * waveAmplitude,
-            palmRotation = Math.sin(handAngle * 2) * waveAmplitude * 2;
-            
+        var dt = timer.tick();            
         // Update angle and cap it to 2 * PI
         handAngle = (handAngle + dt) % (2 * Math.PI);
         
@@ -153,21 +173,38 @@ By: Juhani Koivulainen
             camObject.translateX(velocity.x);
         }
         
-        // Traverse trough every child inside shoulder (first parent) and rotate it.
-        // Last child will have all transformations from every parent applied.
-        shoulder.traverse(function (obj) {
-            obj.rotation.z = handRotation;
-            obj.position.x -= Math.cos(handAngle) * 3 * dt; // Quick and dirty fix for position offset
-        });
-        // Do the same for palm and it's children, but rotate them in other direction
-        palm.traverse(function (obj) {
-            obj.rotation.x = palmRotation;
-            obj.position.z += Math.cos(handAngle * 2) * 9 * dt; // Quick and dirty fix for position offset
-        });
-        
-        // Lock thumbs z-position so it doesn't wonder off
-        thumb.position.z = 0; 
-        
+        for (var i = 0, max = arms.length; i < max; i++) {
+            var arm = arms[i];
+            
+            // Rotate arm
+            if (i % 2 === 0) {
+                arm.shoulder.rotation.x = arm.originalRotation.x + (Math.cos(handAngle) * waveAmplitude);
+                arm.shoulder.rotation.z = arm.originalRotation.z + (Math.sin(handAngle) * waveAmplitude);
+            }
+            else {
+                arm.shoulder.rotation.x = arm.originalRotation.x - (Math.cos(handAngle) * waveAmplitude);
+                arm.shoulder.rotation.z = arm.originalRotation.z - (Math.sin(handAngle) * waveAmplitude);
+            }
+            
+            // Wave every part starting from upper arm
+            arm.upper.traverse(function (obj) {
+                if (i % 2 === 0) {
+                    obj.rotation.y = Math.sin(handAngle) * (Math.PI / 8);
+                    obj.rotation.z = Math.sin(handAngle) * (Math.PI / 8);
+                }
+                else {
+                    obj.rotation.y = -Math.sin(handAngle) * (Math.PI / 8);
+                    obj.rotation.z = -Math.sin(handAngle) * (Math.PI / 8);
+                }
+            });
+            
+            // Wave palm and fingers
+            arm.palm.traverse(function (obj) {
+                var sine = i % 2 === 0 ? Math.sin(handAngle) : -Math.sin(handAngle); 
+                obj.rotation.x = sine * (Math.PI / 8);
+                
+            });
+        }
         // Render & request next frame
         renderer.render(scene, camera);
         requestAnimationFrame(loop);
@@ -221,8 +258,8 @@ By: Juhani Koivulainen
             case 65: left = false;    break;
             case 68: right = false;   break;
             // Left and right arrow keys
-            case 37: if (waveAmplitude < .4) waveAmplitude += 0.1;  break;
-            case 39: if (waveAmplitude > .1) waveAmplitude -= 0.1;  break;
+            case 37: if (waveAmplitude < .2) waveAmplitude += 0.02;  break;
+            case 39: if (waveAmplitude > 0) waveAmplitude -= 0.02;  break;
         }
     };
     </script>
