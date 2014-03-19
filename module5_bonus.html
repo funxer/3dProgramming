@@ -1,0 +1,538 @@
+<!DOCTYPE html>
+<!-- 
+3DGP14 MODULE 4
+ASSIGNMENT 1
+By: Juhani Koivulainen
+-->
+<html>
+    <head>
+        <title>FPS</title>
+        <style>
+            body {
+                margin: 0px;
+                background: #777;
+                color: #FFF;
+                font-family: arial, serif, sans-serif;
+                font-size: 16px;
+                -ms-user-select: none;
+                -moz-user-select: none;
+                -webkit-user-select: none;
+            }
+            #container {
+                top: 0px; left: 0px;
+                border-bottom: 3px solid #FFF;
+            }
+        </style>
+    </head>
+    <body>
+        <!--<canvas id="can" width="800" height="600">Your browser does not support HTML5 canvas element</canvas>-->
+        <div id="container"></div><br>WASD = Move. SPACEBAR = Jump. Click and hold to look.
+        <span id="debug"></span>
+    <script src="lib/three.min.js"></script>
+    <script>
+    // ---------------------------------------------------------------------
+    //   Global vars
+    // ---------------------------------------------------------------------
+    var $ = function(id) {return document.getElementById(id);},
+        // DOM stuff
+        width = window.innerWidth,
+        height = window.innerHeight * .95,
+        container = $("container"),
+
+        // App stuff
+        timer = new Timer(),
+        mouse = {
+            x: 0,
+            y: 0,
+            isDown: false,
+            prevX: 0, 
+            prevY: 0
+        },
+        keys = {
+            W:      { code: 87, isDown: false },
+            A:      { code: 65, isDown: false },
+            S:      { code: 83, isDown: false },
+            D:      { code: 68, isDown: false },
+            SPACE:  { code: 32, isDown: false },
+            LEFT:   { code: 37, isDown: false },
+            UP:     { code: 38, isDown: false },
+            RIGHT:  { code: 39, isDown: false },
+            DOWN:   { code: 40, isDown: false }
+        },
+        handAngle = 0,
+        handAmplitude = 1.2,
+        arms = [],
+        skybox, player,
+        
+        uiCanvas = document.createElement("canvas"),
+        ui = uiCanvas.getContext("2d"),
+        uiTexture = new THREE.Texture(uiCanvas),
+        
+        // Three.js stuff
+        renderer = new THREE.WebGLRenderer(),
+        camera = new THREE.PerspectiveCamera(50, width / height, 1, 2000),
+        camObject = new THREE.Object3D(),
+        scene = new THREE.Scene(),
+        
+    // ---------------------------------------------------------------------
+    //   Level data
+    // ---------------------------------------------------------------------
+    /* 
+        0 = Nothing
+        1 = Stone wall
+        2 = High brick wall
+        3 = Low brick wall
+        4 = Canvas block
+        P = Player
+        A = Arm thingy
+        R = Ruin mesh
+    */
+        level = [
+            "11111111111111111111",
+            "10000000000000000001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "1000R000000000000001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "11111410011001411111",
+            "10000000011000000001",
+            "10223000000000032201",
+            "10200000011000000201",
+            "10300000000000000301",
+            "10000000011000000001",
+            "10000000000000000001",
+            "10000011111111000001",
+            "10000000000000000001",
+            "100000A00A00A0000001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "10000332000023300001",
+            "10000300000000300001",
+            "100004000P0000400001",
+            "10000300000000300001",
+            "10000333300333300001",
+            "10000000000000000001",
+            "10000000000000000001",
+            "11111111111111111111"
+        ],
+        tileWidth = 30,
+        tileHeight = 30,
+        levelWidth = tileWidth * level[0].length,
+        levelHeight = tileHeight * level.length;
+
+    // ---------------------------------------------------------------------
+    //   Initialization
+    // ---------------------------------------------------------------------
+    window.onload = function() {
+        var rockTexture = THREE.ImageUtils.loadTexture("rock.jpg"),
+            wallTexture = THREE.ImageUtils.loadTexture("wall.jpg"),
+            grassTexture = THREE.ImageUtils.loadTexture("grass.jpg"),
+            brickTexture = THREE.ImageUtils.loadTexture("brick.jpg"),
+            brick2Texture = THREE.ImageUtils.loadTexture("brick.jpg"),
+            south   = THREE.ImageUtils.loadTexture("nightsky/nightsky_south.png"),
+            east    = THREE.ImageUtils.loadTexture("nightsky/nightsky_east.png"),
+            north   = THREE.ImageUtils.loadTexture("nightsky/nightsky_north.png"),
+            west    = THREE.ImageUtils.loadTexture("nightsky/nightsky_west.png"),
+            ceiling = THREE.ImageUtils.loadTexture("nightsky/nightsky_up.png"),
+            floor   = THREE.ImageUtils.loadTexture("nightsky/nightsky_down.png"),
+            loader = new THREE.JSONLoader();
+
+        //rockTexture.wrapS = THREE.RepeatWrapping;
+        //rockTexture.wrapT = THREE.RepeatWrapping;
+        //rockTexture.repeat.set(1, 1);
+        
+        // Make textures repeat
+        grassTexture.wrapS = THREE.RepeatWrapping;
+        grassTexture.wrapT = THREE.RepeatWrapping;
+        grassTexture.repeat.set(20, 20);
+        
+        brickTexture.wrapS = THREE.RepeatWrapping;
+        brickTexture.wrapT = THREE.RepeatWrapping;
+        brickTexture.repeat.set(1, 6);
+        
+        brick2Texture.wrapS = THREE.RepeatWrapping;
+        brick2Texture.wrapT = THREE.RepeatWrapping;
+        brick2Texture.repeat.set(1, 2);
+        
+        // Setup renderer
+        renderer.setClearColor(0x11212A, 1);
+        renderer.setSize(width, height);
+        container.style.width = width +"px";
+        container.style.height = height +"px";
+        container.appendChild(renderer.domElement);
+        
+        var ground = new THREE.Mesh(new THREE.CubeGeometry(levelWidth, 1, levelHeight, 1, 1, 1), new THREE.MeshBasicMaterial({ map: grassTexture, transparent: true }));
+        ground.position.set(levelWidth / 2, 0, levelHeight / 2);
+        scene.add(ground);
+        
+        // Generate map from array
+        for (var i = 0; i < level.length; i++) {
+            for (var j = 0; j < level[i].length; j++) {
+                var chrInArray = level[i].charAt(j),
+                    block = new THREE.Mesh(new THREE.CubeGeometry(tileWidth, 40, tileHeight), new THREE.MeshBasicMaterial());
+                    
+                block.position.set((j * tileWidth), 20, (i * tileHeight));
+                
+                if (chrInArray === "1") {
+                    block.material.map = wallTexture;
+                    scene.add(block);
+                }
+                if (chrInArray === "2") {
+                    block.material.map = brickTexture;
+                    //block.geometry = new THREE.CubeGeometry(30, 900, 30);
+                    block.position.set((j * tileWidth), 60, (i * tileHeight));
+                    block.scale.y = 3;
+                    scene.add(block);
+                }
+                if (chrInArray === "3") {
+                    block.material.map = brick2Texture;
+                    //block.geometry = new THREE.CubeGeometry(30, 900, 30);
+                    scene.add(block);
+                }
+                if (chrInArray === "4") {
+                    block.material.map = uiTexture;
+                    //block.geometry = new THREE.CubeGeometry(30, 900, 30);
+                    scene.add(block);
+                }
+                // Add player to the scene when he is found in the array
+                if (chrInArray === "P") {
+                    player = new Player(camObject);
+                    player.gameObject.add(camera);
+                    player.gameObject.position.set((tileWidth / 2) + (j * tileWidth), 20, (tileHeight/ 2) + (i * tileHeight));
+                    scene.add(player.gameObject);
+                }
+                // Add arm thingy
+                if (chrInArray === "A") {
+                    var armPos = new THREE.Vector3((tileWidth / 2) + (j * tileWidth), 30, (tileHeight/ 2) + (i * tileHeight));
+                    arms.push(new Arm(armPos, new THREE.Euler(0, 0, -Math.PI/2), 0.2));
+                    arms.push(new Arm(armPos, new THREE.Euler(Math.PI, 0, Math.PI/2), 0.18));
+                    arms.push(new Arm(armPos, new THREE.Euler(0, 0, 0), 0.18));
+                    arms.push(new Arm(armPos, new THREE.Euler(-Math.PI, 0, 0), 0.18));
+                    arms.push(new Arm(armPos, new THREE.Euler(0, Math.PI / 2, Math.PI / 2), 0.18));
+                    for (var k = 0; k < arms.length; k++) {
+                        scene.add(arms[k].shoulder);
+                    }
+                }
+                // Add ruin mesh
+                if (chrInArray === "R") {
+                    var pos = new THREE.Vector3(j * tileWidth, 0, i * tileHeight);
+                    function addMesh(geometry, materials) {
+                        var mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({map: rockTexture, transparent: true}));
+                        mesh.rotation.x = Math.PI / 2;
+                        mesh.position = pos;
+                        mesh.scale.set(20, 20, 20);
+                        scene.add(mesh);
+                    };
+                    loader.load("meshes/ruins35.js", addMesh);
+                }
+            }
+        }
+        
+        // Light
+        var pointLight = new THREE.PointLight(0xFFFFFF);
+        scene.add(pointLight);
+        
+        //var uiMesh = new THREE.Mesh(new THREE.CubeGeometry(1
+        // Create skybox
+        var skyMaterials = [];
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: west}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: east}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: ceiling}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: floor}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: north}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: south}) );
+        for (var i = 0; i < skyMaterials.length; i++) {
+            skyMaterials[i].side = THREE.BackSide;
+            //skyMaterials[i].depthWrite = false;
+        }
+        
+        var meshFaceMaterial = new THREE.MeshFaceMaterial( skyMaterials );
+        skybox = new THREE.Mesh(
+            //new THREE.CubeGeometry(3, 3, 3, 1, 1, 1),
+            new THREE.CubeGeometry(2000, 2000, 2000, 1, 1, 1),
+            meshFaceMaterial
+        );
+        scene.add(skybox);
+        
+        uiCanvas.width = 256;
+        uiCanvas.height = 256;
+        uiCanvas.style.position = "absolute";
+        uiCanvas.style.top = 10 +"px";
+        uiCanvas.style.left = 10 +"px";
+        uiCanvas.style.opacity = 0.6;
+        document.body.appendChild(uiCanvas);
+        // Start!
+        loop();
+    }
+    
+    // Draw minimap
+    function drawUI() {
+        var pointSizeX = 13,
+            pointSizeY = 8.3,
+            playerX = Math.floor( (player.gameObject.position.x + tileWidth) / tileWidth),
+            playerY = Math.floor( (player.gameObject.position.z + tileHeight) / tileHeight),
+            playerRotationY = -player.gameObject.rotation.y - (Math.PI / 2),
+            lineStartPosX = (playerX * pointSizeX) + (pointSizeX / 2),
+            lineStartPosY = (playerY * pointSizeY) + (pointSizeY / 2),
+            lineLength = 40;
+            
+        uiTexture.needsUpdate = true;
+        
+        // Clear canvas
+        ui.fillStyle = "#FFAA55";
+        ui.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
+        
+        // Draw line vision
+        ui.strokeStyle = "#0000FF";
+        ui.lineWidth = "3";
+        ui.beginPath();
+        ui.moveTo(lineStartPosX, lineStartPosY);
+        ui.lineTo(lineStartPosX + (Math.cos(playerRotationY) * lineLength), lineStartPosY + (Math.sin(playerRotationY) * lineLength));
+        ui.closePath();
+        ui.stroke();
+        
+        // Draw level
+        ui.fillStyle = "#000000";
+        for (var i = 0; i < level.length; i++) {
+            for (var j = 0; j < level[i].length; j++) {
+                var chr = level[i].charAt(j);
+                if (chr !== "0" && chr !== "P" && chr !== "R" && chr !== "A") ui.fillRect(j * pointSizeX, i * pointSizeY, pointSizeX, pointSizeY);
+            }
+        }
+        
+        // Draw player dot
+        ui.fillStyle = "#FF0000";
+        ui.fillRect(playerX * pointSizeX, playerY * pointSizeY, pointSizeX, pointSizeY);
+    }
+    // ---------------------------------------------------------------------
+    //   Game loop
+    // ---------------------------------------------------------------------
+    function loop() {
+        var dt = timer.tick();
+        drawUI();
+        // Update angle and cap it to 2 * PI
+        handAngle = (handAngle + dt) % (2 * Math.PI);
+        // Arm rotations
+        for (var i = 0, max = arms.length; i < max; i++) {
+            var arm = arms[i];
+            
+            if (i % 2 === 0) {
+                arm.shoulder.rotation.y = arm.originalRotation.y + handAngle;
+                arm.shoulder.rotation.z = arm.originalRotation.z + (Math.cos(handAngle) * handAmplitude);
+                arm.elbow.rotation.z = Math.cos(handAngle) * handAmplitude;
+            }
+            else {
+                arm.shoulder.rotation.y = arm.originalRotation.y - handAngle;
+                arm.shoulder.rotation.z = arm.originalRotation.z - (Math.cos(handAngle) * handAmplitude);
+                arm.elbow.rotation.z = -Math.sin(handAngle) * handAmplitude;
+            }
+            arm.wrist.rotation.x = Math.sin(handAngle) * (Math.PI / 4);
+        }
+        
+        // Update player and skybox
+        player.update(dt);
+        skybox.position = player.gameObject.position;
+        
+        // Show debug stuff
+       // $("debug").innerHTML = "<br>";
+        
+        // Render & request next frame
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+    }
+    
+    // ---------------------------------------------------------------------
+    //   Player constructor
+    // ---------------------------------------------------------------------
+    function Player(obj) {
+        this.gameObject = obj;
+        this.acceleration = 0.2;
+        this.deacceleration = 0.2;
+        this.maxSpeed = 2;
+        this.canJump = true;
+        this.weight = 5;
+        this.velocity = new THREE.Vector3();
+    }
+    Player.prototype.update = function(dt) {
+        var dir = 0;
+        if (keys.W.isDown) {
+            dir = -Math.PI / 2;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.z > -this.maxSpeed) this.velocity.z -= this.acceleration;
+            }
+        }
+        if (keys.S.isDown) {
+            dir = Math.PI / 2;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.z < this.maxSpeed) this.velocity.z += this.acceleration;
+            }
+        }
+        if (keys.A.isDown) {
+            dir = -Math.PI;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.x > -this.maxSpeed) this.velocity.x -= this.acceleration;
+            }
+        }
+        if (keys.D.isDown) {
+            dir = 0;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.x < this.maxSpeed) this.velocity.x += this.acceleration;
+            }
+        }
+       
+        // Jumping
+        if (keys.SPACE.isDown && this.canJump) {
+            this.velocity.y = 2;
+            this.canJump = false;
+        }
+        // Player falls too low
+        if (this.gameObject.position.y < 20.0) {
+            this.gameObject.position.y = 20.0;
+            this.velocity.y = 0.0;
+        }
+        // Player is grounded and jump key is released
+        if (!keys.SPACE.isDown && this.gameObject.position.y === 20.0) {
+            this.canJump = true;
+        }
+        // Player is airborne
+        if (!this.canJump) {
+            this.velocity.y -= this.weight * dt;
+        }
+        
+        // Deaccelerate using lerp. If target direction is blocked, stop completely
+        //var deacceleration = 0.2;
+        var tolerance = 0.00001;
+        if ((!keys.W.isDown && !keys.S.isDown) && (this.velocity.z > tolerance || this.velocity.z < -tolerance)) this.velocity.lerp(new THREE.Vector3(this.velocity.x, this.velocity.y, 0), this.deacceleration);
+        if ((!keys.A.isDown && !keys.D.isDown) && (this.velocity.x > tolerance || this.velocity.x < -tolerance)) this.velocity.lerp(new THREE.Vector3(0, this.velocity.y, this.velocity.z), this.deacceleration);
+        if (!this.canMoveInDirection(dir)) this.velocity.set(0, this.velocity.y, 0);
+        
+        // Apply movement
+        this.gameObject.translateX(this.velocity.x);
+        this.gameObject.translateY(this.velocity.y);
+        this.gameObject.translateZ(this.velocity.z);
+        
+    };
+    // Functions for collision detection
+    Player.prototype.canMoveInDirection = function(direction) {
+        //console.log(this.getNextTile(direction));
+        return level[this.getNextTile(direction).z] && 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) && 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "0" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "A" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "P";
+    };
+    Player.prototype.getNextTile = function(direction) {
+        var X = Math.floor( ((tileWidth / 2) + this.gameObject.position.x + (Math.cos(-this.gameObject.rotation.y + direction) * 20)) / tileWidth ),
+            Z = Math.floor( ((tileHeight / 2) + this.gameObject.position.z + (Math.sin(-this.gameObject.rotation.y + direction) * 20)) / tileHeight );
+        return {x: X, z: Z};
+    };
+    
+    // ---------------------------------------------------------------------
+    //   Arm constructor
+    // ---------------------------------------------------------------------
+    function Arm(pos, rot, scale) {
+        var randomMaterial = function() { return new THREE.MeshBasicMaterial({color: Math.random() * 0xFFFFFF }); },
+            sphereGeometry = new THREE.SphereGeometry(4, 32, 32);
+            
+        this.originalPosition = pos.clone();
+        this.originalRotation = rot.clone();
+        
+        this.thumb    = new THREE.Mesh(new THREE.CubeGeometry(20, 3, 3), randomMaterial());
+        this.finger1  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger2  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger3  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger4  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.palm     = new THREE.Mesh(new THREE.CubeGeometry(30, 30, 14), randomMaterial());
+        this.wrist    = new THREE.Mesh(sphereGeometry, randomMaterial());
+        this.lower    = new THREE.Mesh(new THREE.CubeGeometry(2, 50, 2), randomMaterial());
+        this.elbow    = new THREE.Mesh(sphereGeometry, randomMaterial());
+        this.upper    = new THREE.Mesh(new THREE.CubeGeometry(2, 50, 2), randomMaterial());
+        this.shoulder = new THREE.Mesh(sphereGeometry, randomMaterial());
+        
+        // Adjust positions for each part
+        this.shoulder.position.y = 10;
+        this.upper.position.y = 25;
+        this.elbow.position.y = 25;
+        this.lower.position.y = 25;
+        this.wrist.position.y = 25;
+        this.palm.position.y = 15;
+        this.finger1.position.x = -12;
+        this.finger1.position.y = 26;
+        this.finger2.position.x = -4;
+        this.finger2.position.y = 26;
+        this.finger3.position.x = 4;
+        this.finger3.position.y = 26;
+        this.finger4.position.x = 12;
+        this.finger4.position.y = 26;
+        this.thumb.position.x = -20;
+        this.shoulder.position = pos;
+        this.shoulder.rotation = rot;
+        this.shoulder.scale.set(scale, scale, scale);
+        
+        this.palm.add(this.thumb);
+        this.palm.add(this.finger1);
+        this.palm.add(this.finger2);
+        this.palm.add(this.finger3);
+        this.palm.add(this.finger4);
+        this.wrist.add(this.palm);
+        this.lower.add(this.wrist);
+        this.elbow.add(this.lower);
+        this.upper.add(this.elbow);
+        this.shoulder.add(this.upper);
+    }
+    
+    // ---------------------------------------------------------------------
+    //   Game timer to determine deltatime. Copied from:
+    //   http://blog.sethladd.com/2011/05/source-code-slides-and-video-for-html5.html
+    // ---------------------------------------------------------------------
+    function Timer () {
+        this.gameTime = 0;
+        this.maxStep = 0.05;
+        this.wallLastTime = 0;
+    }
+    Timer.prototype.tick = function () {
+        var wallCurrent = window.performance && window.performance.now ? window.performance.now() : new Date().getTime();
+        var wallDelta = (wallCurrent - this.wallLastTime) / 1000;
+        this.wallLastTime = wallCurrent;
+        var gameDelta = Math.min(wallDelta, this.maxStep);
+        this.gameTime += gameDelta;
+        return gameDelta;
+    };
+    
+    // ---------------------------------------------------------------------
+    //   Input events
+    // ---------------------------------------------------------------------
+    container.onmousedown = function(e) {
+        mouse.isDown = true;
+    };
+    window.onmouseup = function(e) {
+        mouse.isDown = false;
+    };
+    window.onmousemove = function(e) {
+        if (mouse.isDown) {
+            var rotY = (e.pageX - mouse.prevX) * 0.003;
+            var rot = (e.pageY - mouse.prevY) * 0.003;
+            player.gameObject.rotation.y -= rotY;
+            camera.rotation.x -= rot;
+        }
+        mouse.prevY = e.pageY;
+        mouse.prevX = e.pageX;
+    };
+    window.onkeydown = function(e) {
+        for (var k in keys) {
+            if (e.keyCode === keys[k].code) keys[k].isDown = true;
+        }
+    };
+    window.onkeyup = function(e) {
+        for (var k in keys) {
+            if (e.keyCode === keys[k].code) keys[k].isDown = false;
+        }
+    };
+    </script>
+    </body>
+</html>
