@@ -273,11 +273,11 @@ By: Juhani Koivulainen
     function drawUI() {
         var pointSizeX = 13,
             pointSizeY = 8.3,
-            playerX = Math.floor( (player.gameObject.position.x + tileWidth) / tileWidth),
-            playerY = Math.floor( (player.gameObject.position.z + tileHeight) / tileHeight),
+            playerX = ((player.gameObject.position.x) / levelWidth) * uiCanvas.width,
+            playerY = ((player.gameObject.position.z) / levelHeight) * uiCanvas.height,
             playerRotationY = -player.gameObject.rotation.y - (Math.PI / 2),
-            lineStartPosX = (playerX * pointSizeX) + (pointSizeX / 2),
-            lineStartPosY = (playerY * pointSizeY) + (pointSizeY / 2),
+            lineStartPosX = playerX + (pointSizeX / 2),
+            lineStartPosY = playerY + (pointSizeY / 2),
             lineLength = 40;
             
         uiTexture.needsUpdate = true;
@@ -306,7 +306,7 @@ By: Juhani Koivulainen
         
         // Draw player dot
         ui.fillStyle = "#FF0000";
-        ui.fillRect(playerX * pointSizeX, playerY * pointSizeY, pointSizeX, pointSizeY);
+        ui.fillRect(playerX, playerY, pointSizeX, pointSizeY);
     }
     // ---------------------------------------------------------------------
     //   Game loop
