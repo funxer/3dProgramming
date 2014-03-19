@@ -237,7 +237,6 @@ By: Juhani Koivulainen
         var pointLight = new THREE.PointLight(0xFFFFFF);
         scene.add(pointLight);
         
-        //var uiMesh = new THREE.Mesh(new THREE.CubeGeometry(1
         // Create skybox
         var skyMaterials = [];
         skyMaterials.push( new THREE.MeshBasicMaterial({map: west}) );
@@ -351,8 +350,8 @@ By: Juhani Koivulainen
     // ---------------------------------------------------------------------
     function Player(obj) {
         this.gameObject = obj;
-        this.acceleration = 0.2;
-        this.deacceleration = 0.2;
+        this.acceleration = 15;
+        this.deacceleration = 15;
         this.maxSpeed = 2;
         this.canJump = true;
         this.weight = 5;
@@ -363,25 +362,25 @@ By: Juhani Koivulainen
         if (keys.W.isDown) {
             dir = -Math.PI / 2;
             if (this.canMoveInDirection(dir)) {
-                if (this.velocity.z > -this.maxSpeed) this.velocity.z -= this.acceleration;
+                if (this.velocity.z > -this.maxSpeed) this.velocity.z -= this.acceleration * dt;
             }
         }
         if (keys.S.isDown) {
             dir = Math.PI / 2;
             if (this.canMoveInDirection(dir)) {
-                if (this.velocity.z < this.maxSpeed) this.velocity.z += this.acceleration;
+                if (this.velocity.z < this.maxSpeed) this.velocity.z += this.acceleration * dt;
             }
         }
         if (keys.A.isDown) {
             dir = -Math.PI;
             if (this.canMoveInDirection(dir)) {
-                if (this.velocity.x > -this.maxSpeed) this.velocity.x -= this.acceleration;
+                if (this.velocity.x > -this.maxSpeed) this.velocity.x -= this.acceleration * dt;
             }
         }
         if (keys.D.isDown) {
             dir = 0;
             if (this.canMoveInDirection(dir)) {
-                if (this.velocity.x < this.maxSpeed) this.velocity.x += this.acceleration;
+                if (this.velocity.x < this.maxSpeed) this.velocity.x += this.acceleration * dt;
             }
         }
        
@@ -407,8 +406,8 @@ By: Juhani Koivulainen
         // Deaccelerate using lerp. If target direction is blocked, stop completely
         //var deacceleration = 0.2;
         var tolerance = 0.00001;
-        if ((!keys.W.isDown && !keys.S.isDown) && (this.velocity.z > tolerance || this.velocity.z < -tolerance)) this.velocity.lerp(new THREE.Vector3(this.velocity.x, this.velocity.y, 0), this.deacceleration);
-        if ((!keys.A.isDown && !keys.D.isDown) && (this.velocity.x > tolerance || this.velocity.x < -tolerance)) this.velocity.lerp(new THREE.Vector3(0, this.velocity.y, this.velocity.z), this.deacceleration);
+        if ((!keys.W.isDown && !keys.S.isDown) && (this.velocity.z > tolerance || this.velocity.z < -tolerance)) this.velocity.lerp(new THREE.Vector3(this.velocity.x, this.velocity.y, 0), this.deacceleration * dt);
+        if ((!keys.A.isDown && !keys.D.isDown) && (this.velocity.x > tolerance || this.velocity.x < -tolerance)) this.velocity.lerp(new THREE.Vector3(0, this.velocity.y, this.velocity.z), this.deacceleration * dt);
         if (!this.canMoveInDirection(dir)) this.velocity.set(0, this.velocity.y, 0);
         
         // Apply movement
