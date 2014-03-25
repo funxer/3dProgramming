@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <!-- 
-3DGP14 MODULE 4
+3DGP14 MODULE 5
 ASSIGNMENT 1
 By: Juhani Koivulainen
 -->
@@ -29,6 +29,50 @@ By: Juhani Koivulainen
         <div id="container"></div><br>WASD = Move. SPACEBAR = Jump. Click and hold to look.
         <span id="debug"></span>
     <script src="lib/three.min.js"></script>
+    <script id="script_vs" type="x-shader/x-vertex">
+        uniform vec3 uAmbientColor;
+        uniform vec3 uDirLightPos;
+        uniform vec3 uDirLightTargetPos;
+        uniform vec3 uDirLightColor;
+        
+        varying vec2 vUv;
+        varying vec3 vLight;
+        varying vec3 vViewPosition;
+        
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+            
+            // Calculate view position
+            vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+            vViewPosition = mvPosition.xyz;
+            
+            // Directional light is computed here
+            vec3 uDirLightRot = uDirLightPos - uDirLightTargetPos;
+            vec3 directionalVector = normalize(uDirLightRot);
+            float directional = max(dot(normal, directionalVector), 0.0);
+            vLight = uAmbientColor + (uDirLightColor * directional);
+        }
+    </script>
+    <script id="script_fs" type="x-shader/x-fragment">
+        varying vec2 vUv;
+        varying vec3 vLight;
+        varying vec3 vViewPosition;
+        //varying vec3 vPos;
+        uniform sampler2D map;
+        uniform vec4 uFlashLightColor;
+        
+        void main() {
+            // Draw the texture normally
+            vec4 textureColor = texture2D(map, vUv);
+            gl_FragColor = vec4(textureColor.rgb * vLight, 1.0);
+            
+            // If length from the center of view is less than 20, add flashlight color to FragColor
+            if (length( vViewPosition.xy ) < 20.0) {
+                gl_FragColor += textureColor + vec4(uFlashLightColor.xyz, 1.0);
+            }
+        }
+    </script>
     <script>
     // ---------------------------------------------------------------------
     //   Global vars
@@ -62,8 +106,10 @@ By: Juhani Koivulainen
         handAngle = 0,
         handAmplitude = 1.2,
         arms = [],
-        skybox, player,
+        skybox, player, dirLight, spotLight, ambientLight, 
+        testSphere = new THREE.Mesh(new THREE.SphereGeometry(100, 16, 16), new THREE.MeshBasicMaterial({color:0xffffff})),
         
+        // Minimap vars
         uiCanvas = document.createElement("canvas"),
         ui = uiCanvas.getContext("2d"),
         uiTexture = new THREE.Texture(uiCanvas),
@@ -78,53 +124,32 @@ By: Juhani Koivulainen
     //   Level data
     // ---------------------------------------------------------------------
     /* 
-        0 = Nothing
         1 = Stone wall
         2 = High brick wall
-        3 = Low brick wall
-        4 = Canvas block
         P = Player
         A = Arm thingy
-        R = Ruin mesh
+        R = Ruin mesh ( Can add only 1 currently :( )
     */
         level = [
-            "11111111111111111111",
-            "10000000000000000001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "1000R000000000000001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "11111410011001411111",
-            "10000000011000000001",
-            "10223000000000032201",
-            "10200000011000000201",
-            "10300000000000000301",
-            "10000000011000000001",
-            "10000000000000000001",
-            "10000011111111000001",
-            "10000000000000000001",
-            "100000A00A00A0000001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "10000332000023300001",
-            "10000300000000300001",
-            "100004000P0000400001",
-            "10000300000000300001",
-            "10000333300333300001",
-            "10000000000000000001",
-            "10000000000000000001",
-            "11111111111111111111"
+            "21111111111111111112",
+            "1                  1",
+            "1                  1",
+            "1 A     2  2       1",
+            "1  R   22  22      1",
+            "1                  1",
+            "1      22  22      1",
+            "1       2  2       1",
+            "1 A      P         1",
+            "1                  1",
+            "21111111111111111112"
+            
         ],
         tileWidth = 30,
         tileHeight = 30,
         levelWidth = tileWidth * level[0].length,
         levelHeight = tileHeight * level.length;
-
+        
+        
     // ---------------------------------------------------------------------
     //   Initialization
     // ---------------------------------------------------------------------
@@ -132,8 +157,6 @@ By: Juhani Koivulainen
         var rockTexture = THREE.ImageUtils.loadTexture("rock.jpg"),
             wallTexture = THREE.ImageUtils.loadTexture("wall.jpg"),
             grassTexture = THREE.ImageUtils.loadTexture("grass.jpg"),
-            brickTexture = THREE.ImageUtils.loadTexture("brick.jpg"),
-            brick2Texture = THREE.ImageUtils.loadTexture("brick.jpg"),
             south   = THREE.ImageUtils.loadTexture("nightsky/nightsky_south.png"),
             east    = THREE.ImageUtils.loadTexture("nightsky/nightsky_east.png"),
             north   = THREE.ImageUtils.loadTexture("nightsky/nightsky_north.png"),
@@ -141,23 +164,9 @@ By: Juhani Koivulainen
             ceiling = THREE.ImageUtils.loadTexture("nightsky/nightsky_up.png"),
             floor   = THREE.ImageUtils.loadTexture("nightsky/nightsky_down.png"),
             loader = new THREE.JSONLoader();
-
-        //rockTexture.wrapS = THREE.RepeatWrapping;
-        //rockTexture.wrapT = THREE.RepeatWrapping;
-        //rockTexture.repeat.set(1, 1);
-        
-        // Make textures repeat
-        grassTexture.wrapS = THREE.RepeatWrapping;
-        grassTexture.wrapT = THREE.RepeatWrapping;
-        grassTexture.repeat.set(20, 20);
-        
-        brickTexture.wrapS = THREE.RepeatWrapping;
-        brickTexture.wrapT = THREE.RepeatWrapping;
-        brickTexture.repeat.set(1, 6);
-        
-        brick2Texture.wrapS = THREE.RepeatWrapping;
-        brick2Texture.wrapT = THREE.RepeatWrapping;
-        brick2Texture.repeat.set(1, 2);
+            
+        // Uncomment this to see directional light source in the scene
+        //scene.add(testSphere);
         
         // Setup renderer
         renderer.setClearColor(0x11212A, 1);
@@ -166,44 +175,87 @@ By: Juhani Koivulainen
         container.style.height = height +"px";
         container.appendChild(renderer.domElement);
         
-        var ground = new THREE.Mesh(new THREE.CubeGeometry(levelWidth, 1, levelHeight, 1, 1, 1), new THREE.MeshBasicMaterial({ map: grassTexture, transparent: true }));
-        ground.position.set(levelWidth / 2, 0, levelHeight / 2);
-        scene.add(ground);
+        // Create lights
+        spotLight    = new THREE.SpotLight(0x323222, 1.0);
+        ambientLight = new THREE.AmbientLight(0x222233);
+        dirLight     = new THREE.DirectionalLight(0xCCCCFF, 1.5)
+        dirLight.position.set(levelWidth,200, -300);
+        
+        // Uniforms
+        // Wall texture
+        spotUniformsWall = {
+            uDirLightPos:       { type: "v3", value: dirLight.position },
+            uDirLightTargetPos: { type: "v3", value: new THREE.Vector3() },
+            uDirLightColor:     { type: "v3", value: new THREE.Vector3(0.3, 0.3, 0.5) },
+            uAmbientColor:      { type: "v3", value: new THREE.Vector3(ambientLight.color.r, ambientLight.color.g, ambientLight.color.b) },
+            uFlashLightColor:   { type: "v4", value: new THREE.Vector4(spotLight.color.r, spotLight.color.g, spotLight.color.b, 1.0) },
+            map:                { type: "t",  value: wallTexture }
+        };
+        
+        // Ground texture
+        spotUniformsGround = {
+            uDirLightPos:       { type: "v3", value: dirLight.position },
+            uDirLightTargetPos: { type: "v3", value: new THREE.Vector3() },
+            uDirLightColor:     { type: "v3", value: new THREE.Vector3(0.3, 0.3, 0.5) },
+            uAmbientColor:      { type: "v3", value: new THREE.Vector3(ambientLight.color.r, ambientLight.color.g, ambientLight.color.b) },
+            uFlashLightColor:   { type: "v4", value: new THREE.Vector4(spotLight.color.r, spotLight.color.g, spotLight.color.b, 1.0) },
+            map:                { type: "t",  value: grassTexture }
+        };
+        
+        // Mesh texture
+        spotUniformsMesh = {
+            uDirLightPos:       { type: "v3", value: dirLight.position },
+            uDirLightTargetPos: { type: "v3", value: new THREE.Vector3() },
+            uDirLightColor:     { type: "v3", value: new THREE.Vector3(0.3, 0.3, 0.5) },
+            uAmbientColor:      { type: "v3", value: new THREE.Vector3(ambientLight.color.r, ambientLight.color.g, ambientLight.color.b) },
+            uFlashLightColor:   { type: "v4", value: new THREE.Vector4(spotLight.color.r, spotLight.color.g, spotLight.color.b, 1.0) },
+            map:                { type: "t",  value: rockTexture }
+        };
+        
+        //   Materials
+        var groundMaterial = new THREE.ShaderMaterial({ 
+            uniforms:       spotUniformsGround,
+            vertexShader:   $("script_vs").innerHTML, 
+            fragmentShader: $("script_fs").innerHTML
+        });
+        
+        var blockMaterial = new THREE.ShaderMaterial({ 
+            uniforms:       spotUniformsWall,
+            vertexShader:   $("script_vs").innerHTML, 
+            fragmentShader: $("script_fs").innerHTML
+        });
+        
+        var meshMaterial = new THREE.ShaderMaterial({ 
+            uniforms:       spotUniformsMesh,
+            vertexShader:   $("script_vs").innerHTML, 
+            fragmentShader: $("script_fs").innerHTML
+        });
         
         // Generate map from array
         for (var i = 0; i < level.length; i++) {
             for (var j = 0; j < level[i].length; j++) {
                 var chrInArray = level[i].charAt(j),
-                    block = new THREE.Mesh(new THREE.CubeGeometry(tileWidth, 40, tileHeight), new THREE.MeshBasicMaterial());
+                    block = new THREE.Mesh(new THREE.CubeGeometry(tileWidth, 40, tileHeight), blockMaterial);
                     
-                block.position.set((j * tileWidth), 20, (i * tileHeight));
+                // Set block positions
+                block.position.set(j * tileWidth, 20, i * tileHeight);
                 
                 if (chrInArray === "1") {
-                    block.material.map = wallTexture;
                     scene.add(block);
                 }
                 if (chrInArray === "2") {
-                    block.material.map = brickTexture;
-                    //block.geometry = new THREE.CubeGeometry(30, 900, 30);
-                    block.position.set((j * tileWidth), 60, (i * tileHeight));
+                    block.position.y = 60;
                     block.scale.y = 3;
-                    scene.add(block);
-                }
-                if (chrInArray === "3") {
-                    block.material.map = brick2Texture;
-                    //block.geometry = new THREE.CubeGeometry(30, 900, 30);
-                    scene.add(block);
-                }
-                if (chrInArray === "4") {
-                    block.material.map = uiTexture;
-                    //block.geometry = new THREE.CubeGeometry(30, 900, 30);
                     scene.add(block);
                 }
                 // Add player to the scene when he is found in the array
                 if (chrInArray === "P") {
                     player = new Player(camObject);
                     player.gameObject.add(camera);
+                    
                     player.gameObject.position.set((tileWidth / 2) + (j * tileWidth), 20, (tileHeight/ 2) + (i * tileHeight));
+                    dirLight.target = player.gameObject.clone();
+                    
                     scene.add(player.gameObject);
                 }
                 // Add arm thingy
@@ -222,7 +274,7 @@ By: Juhani Koivulainen
                 if (chrInArray === "R") {
                     var pos = new THREE.Vector3(j * tileWidth, 0, i * tileHeight);
                     function addMesh(geometry, materials) {
-                        var mesh = new THREE.Mesh(geometry, new THREE.MeshBasicMaterial({map: rockTexture, transparent: true}));
+                        var mesh = new THREE.Mesh(geometry, meshMaterial);
                         mesh.rotation.x = Math.PI / 2;
                         mesh.position = pos;
                         mesh.scale.set(20, 20, 20);
@@ -233,9 +285,10 @@ By: Juhani Koivulainen
             }
         }
         
-        // Light
-        var pointLight = new THREE.PointLight(0xFFFFFF);
-        scene.add(pointLight);
+        // Create ground
+        var ground = new THREE.Mesh(new THREE.CubeGeometry(levelWidth, 1, levelHeight, 1, 1, 1), groundMaterial);
+        ground.position.set(levelWidth / 2, 0, levelHeight / 2);
+        scene.add(ground);
         
         // Create skybox
         var skyMaterials = [];
@@ -249,7 +302,6 @@ By: Juhani Koivulainen
             skyMaterials[i].side = THREE.BackSide;
             //skyMaterials[i].depthWrite = false;
         }
-        
         var meshFaceMaterial = new THREE.MeshFaceMaterial( skyMaterials );
         skybox = new THREE.Mesh(
             //new THREE.CubeGeometry(3, 3, 3, 1, 1, 1),
@@ -258,6 +310,7 @@ By: Juhani Koivulainen
         );
         scene.add(skybox);
         
+        // Setup UI (minimap)
         uiCanvas.width = 256;
         uiCanvas.height = 256;
         uiCanvas.style.position = "absolute";
@@ -265,14 +318,17 @@ By: Juhani Koivulainen
         uiCanvas.style.left = 10 +"px";
         uiCanvas.style.opacity = 0.6;
         document.body.appendChild(uiCanvas);
+        
         // Start!
         loop();
     }
     
-    // Draw minimap
+    // ---------------------------------------------------------------------
+    //   Minimap drawing
+    // ---------------------------------------------------------------------
     function drawUI() {
-        var pointSizeX = 13,
-            pointSizeY = 8.3,
+        var pointSizeX = (uiCanvas.width / levelWidth) * tileWidth,
+            pointSizeY = (uiCanvas.height / levelHeight) * tileHeight,
             playerX = ((player.gameObject.position.x) / levelWidth) * uiCanvas.width,
             playerY = ((player.gameObject.position.z) / levelHeight) * uiCanvas.height,
             playerRotationY = -player.gameObject.rotation.y - (Math.PI / 2),
@@ -283,7 +339,7 @@ By: Juhani Koivulainen
         uiTexture.needsUpdate = true;
         
         // Clear canvas
-        ui.fillStyle = "#FFAA55";
+        ui.fillStyle = "rgba(255, 190, 90, 0.2)";
         ui.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
         
         // Draw line vision
@@ -300,7 +356,7 @@ By: Juhani Koivulainen
         for (var i = 0; i < level.length; i++) {
             for (var j = 0; j < level[i].length; j++) {
                 var chr = level[i].charAt(j);
-                if (chr !== "0" && chr !== "P" && chr !== "R" && chr !== "A") ui.fillRect(j * pointSizeX, i * pointSizeY, pointSizeX, pointSizeY);
+                if (chr !== " " && chr !== "P" && chr !== "R" && chr !== "A") ui.fillRect(j * pointSizeX, i * pointSizeY, pointSizeX, pointSizeY);
             }
         }
         
@@ -308,15 +364,26 @@ By: Juhani Koivulainen
         ui.fillStyle = "#FF0000";
         ui.fillRect(playerX, playerY, pointSizeX, pointSizeY);
     }
+    
     // ---------------------------------------------------------------------
     //   Game loop
     // ---------------------------------------------------------------------
     function loop() {
         var dt = timer.tick();
+        
         drawUI();
+        
+        testSphere.position = dirLight.position;
+       
+        // Update player and skybox
+        player.update(dt);
+        skybox.position = player.gameObject.position;
+        
+        
         // Update angle and cap it to 2 * PI
         handAngle = (handAngle + dt) % (2 * Math.PI);
-        // Arm rotations
+        
+        // Rotate arms, every other in opposite direction
         for (var i = 0, max = arms.length; i < max; i++) {
             var arm = arms[i];
             
@@ -332,13 +399,6 @@ By: Juhani Koivulainen
             }
             arm.wrist.rotation.x = Math.sin(handAngle) * (Math.PI / 4);
         }
-        
-        // Update player and skybox
-        player.update(dt);
-        skybox.position = player.gameObject.position;
-        
-        // Show debug stuff
-       // $("debug").innerHTML = "<br>";
         
         // Render & request next frame
         renderer.render(scene, camera);
@@ -421,8 +481,10 @@ By: Juhani Koivulainen
         //console.log(this.getNextTile(direction));
         return level[this.getNextTile(direction).z] && 
                level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) && 
-               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "0" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === " " || 
                level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "A" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "R" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "T" || 
                level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "P";
     };
     Player.prototype.getNextTile = function(direction) {
@@ -435,8 +497,10 @@ By: Juhani Koivulainen
     //   Arm constructor
     // ---------------------------------------------------------------------
     function Arm(pos, rot, scale) {
-        var randomMaterial = function() { return new THREE.MeshBasicMaterial({color: Math.random() * 0xFFFFFF }); },
-            sphereGeometry = new THREE.SphereGeometry(4, 32, 32);
+        var sphereGeometry = new THREE.SphereGeometry(4, 32, 32),
+            randomMaterial = function() { 
+                return new THREE.MeshBasicMaterial({color: Math.random() * 0xFFFFFF}); 
+            };
             
         this.originalPosition = pos.clone();
         this.originalRotation = rot.clone();
