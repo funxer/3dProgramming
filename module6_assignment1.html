@@ -1,0 +1,879 @@
+<!DOCTYPE html>
+<!-- 
+3DGP14 MODULE 6
+ASSIGNMENT 1
+By: Juhani Koivulainen
+-->
+<html>
+    <head>
+        <title>Particulz</title>
+        <style>
+            body {
+                margin: 0px;
+                background: #777;
+                color: #FFF;
+                font-family: arial, serif, sans-serif;
+                font-size: 16px;
+                -ms-user-select: none;
+                -moz-user-select: none;
+                -webkit-user-select: none;
+            }
+            #container {
+                top: 0px; left: 0px;
+                border-bottom: 3px solid #FFF;
+            }
+        </style>
+    </head>
+    <body>
+        <!--<canvas id="can" width="800" height="600">Your browser does not support HTML5 canvas element</canvas>-->
+        <div id="container"></div><br>WASD = Move. SPACEBAR = Jump. Click and hold to look.
+        <span id="debug"></span>
+    <script src="lib/three.min.js"></script>
+    <script id="default_vs" type="x-shader/x-vertex">
+        uniform vec3 uAmbientColor;
+        uniform vec3 uDirLightPos;
+        uniform vec3 uDirLightTargetPos;
+        uniform vec3 uDirLightColor;
+        
+        // Spotlight
+        float spotCosCutoff = -0.1;
+        float exponent = 2.0;
+        
+        varying vec2 vUv;
+        varying vec3 vLight;
+        varying vec3 vViewPosition;
+        
+        void main() {
+            vUv = uv;
+            gl_Position = projectionMatrix * modelViewMatrix * vec4( position, 1.0 );
+            
+            // Calculate view position
+            vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+            vViewPosition = mvPosition.xyz;
+            
+            // Directional light is computed here
+            vec3 uDirLightRot = uDirLightPos - uDirLightTargetPos;
+            vec3 directionalVector = normalize(uDirLightRot);
+            float directional = max(dot(normal, directionalVector), 0.0);
+            vLight = uAmbientColor + (uDirLightColor * directional);
+        }
+    </script>
+    <script id="default_fs" type="x-shader/x-fragment">
+        varying vec2 vUv;
+        varying vec3 vLight;
+        varying vec3 vViewPosition;
+        //varying vec3 vPos;
+        uniform sampler2D map;
+        uniform vec4 uFlashLightColor;
+        
+        void main() {
+            // Draw the texture normally
+            vec4 textureColor = texture2D(map, vUv);
+            gl_FragColor = vec4(textureColor.rgb * vLight, 1.0);
+            
+            // If length from the center of view is less than 20, add flashlight color to FragColor
+            if (length( vViewPosition.xy ) < 20.0) {
+                //gl_FragColor += textureColor + vec4(uFlashLightColor.xyz, 1.0);
+            }
+        }
+    </script>
+    <!-- Fragment shader for the tree -->
+    <script id="fs_tree" type="x-shader/x-fragment">
+        varying vec2 vUv;
+        varying vec3 vLight;
+        varying vec3 vViewPosition;
+        //varying vec3 vPos;
+        uniform sampler2D map;
+        uniform vec4 uFlashLightColor;
+        
+        void main() {
+            // Draw the texture normally
+            vec4 textureColor = texture2D(map, vUv);
+            float fragmentBrightness = (textureColor.r + textureColor.g + textureColor.b) / 3.0; 
+            if (fragmentBrightness < 0.005) discard;
+            gl_FragColor = vec4(textureColor.rgb * vLight, 1.0);
+            
+            // If length from the center of view is less than 20, add flashlight color to FragColor
+            if (length( vViewPosition.xy ) < 20.0) {
+                //gl_FragColor += textureColor + vec4(uFlashLightColor.xyz, 1.0);
+            }
+        }
+    </script>
+    <script>
+    // ---------------------------------------------------------------------
+    //   Global vars
+    // ---------------------------------------------------------------------
+    var $ = function(id) {return document.getElementById(id);},
+        // DOM stuff
+        width = window.innerWidth,
+        height = window.innerHeight * .95,
+        container = $("container"),
+
+        // App stuff
+        timer = new Timer(),
+        mouse = {
+            x: 0,
+            y: 0,
+            isDown: false,
+            prevX: 0, 
+            prevY: 0
+        },
+        keys = {
+            W:      { code: 87, isDown: false },
+            A:      { code: 65, isDown: false },
+            S:      { code: 83, isDown: false },
+            D:      { code: 68, isDown: false },
+            SPACE:  { code: 32, isDown: false },
+            LEFT:   { code: 37, isDown: false },
+            UP:     { code: 38, isDown: false },
+            RIGHT:  { code: 39, isDown: false },
+            DOWN:   { code: 40, isDown: false }
+        },
+        handAngle = 0,
+        handAmplitude = 1.2,
+        arms = [],
+        meshes = [],
+        textures = {},
+        materials = {},
+        campfires = [],
+        player,
+        skybox, skySphere, 
+        dirLight, spotLight, ambientLight, 
+        testSphere = new THREE.Mesh(new THREE.SphereGeometry(120, 64, 64), new THREE.MeshBasicMaterial({color:0xffffff})),
+        
+        
+        // Minimap vars
+        uiCanvas = document.createElement("canvas"),
+        ui = uiCanvas.getContext("2d"),
+        uiTexture = new THREE.Texture(uiCanvas),
+        
+        // FPS widget
+        fpsDisplay = new FpsDisplay(270, 10);
+        
+        // Three.js stuff
+        renderer = new THREE.WebGLRenderer(),
+        camera = new THREE.PerspectiveCamera(50, width / height, 1, 2000),
+        camObject = new THREE.Object3D(),
+        scene = new THREE.Scene(),
+        
+    // ---------------------------------------------------------------------
+    //   Level data
+    // ---------------------------------------------------------------------
+    /* 
+        1 = Stone wall
+        2 = High brick wall
+        P = Player
+        A = Arm thingy
+        C = Campfire
+        R = Ruin mesh ( Can add only 1 currently :( )
+        T = Tree
+    */
+        level = [
+            "2111111111111111112",
+            "1                 1",
+            "1    T       T    1",
+            "1 T      T        1",
+            "1    T         T  1",
+            "1       C C    T  1",
+            "1       C C  T    1",
+            "1   RT   A        1",
+            "1      T      T   1",
+            "1  T        T     1",
+            "1                 1",
+            "11111111   11111111",
+            "       1   1       ",
+            "       1   1       ",
+            "       1   1       ",
+            "       1 P 1       ",
+            "       1   1       ",
+            "       11111       "
+            
+        ],
+        tileWidth = 30,
+        tileHeight = 30,
+        levelWidth = tileWidth * level[0].length,
+        levelHeight = tileHeight * level.length;
+        
+    // ---------------------------------------------------------------------
+    //   Initialization
+    // ---------------------------------------------------------------------
+    window.onload = function() {
+        var loader = new THREE.JSONLoader();
+        
+        // Load textures
+        textures.rockTexture    = THREE.ImageUtils.loadTexture("rock.jpg");
+        textures.wallTexture    = THREE.ImageUtils.loadTexture("wall.jpg");
+        textures.grassTexture   = THREE.ImageUtils.loadTexture("grass.jpg");
+        textures.cloudTexture   = THREE.ImageUtils.loadTexture("clouds.png");
+        textures.limeTexture    = THREE.ImageUtils.loadTexture("lime.png");
+        textures.pineTexture    = THREE.ImageUtils.loadTexture("pine.png");
+        textures.plasmaTexture  = THREE.ImageUtils.loadTexture("plasma.png");
+        textures.flameTexture   = THREE.ImageUtils.loadTexture("fire.png");
+        textures.smokeTexture   = THREE.ImageUtils.loadTexture("smoke.png");
+        textures.south   = THREE.ImageUtils.loadTexture("nightsky/nightsky_south.png");
+        textures.east    = THREE.ImageUtils.loadTexture("nightsky/nightsky_east.png");
+        textures.north   = THREE.ImageUtils.loadTexture("nightsky/nightsky_north.png");
+        textures.west    = THREE.ImageUtils.loadTexture("nightsky/nightsky_west.png");
+        textures.ceiling = THREE.ImageUtils.loadTexture("nightsky/nightsky_up.png");
+        textures.floor   = THREE.ImageUtils.loadTexture("nightsky/nightsky_down.png");
+        
+        textures.grassTexture.wrapS = THREE.RepeatWrapping;
+        textures.grassTexture.wrapT = THREE.RepeatWrapping;
+        
+        // Create lights
+        spotLight    = new THREE.SpotLight(0x323222, 1.0);
+        ambientLight = new THREE.AmbientLight(0x555566);
+        dirLight     = new THREE.DirectionalLight(0xCCCCFF, 1.5)
+        dirLight.position.set(levelWidth, 200, -300);
+        
+        // Setup renderer
+        renderer.setClearColor(0x11212A, 1);
+        renderer.setSize(width, height);
+        container.style.width = width +"px";
+        container.style.height = height +"px";
+        container.appendChild(renderer.domElement);
+        container.appendChild(fpsDisplay.domElement);
+        
+        // Create materials
+        materials.groundMaterial = makeShaderMaterial({ map: textures.grassTexture });
+        materials.blockMaterial = makeShaderMaterial({ map: textures.wallTexture });
+        materials.ruinMaterial = makeShaderMaterial({ map: textures.rockTexture });
+
+        // Generate map from array
+        for (var i = 0; i < level.length; i++) {
+            for (var j = 0; j < level[i].length; j++) {
+                var chrInArray = level[i].charAt(j),
+                    block = new THREE.Mesh(new THREE.CubeGeometry(tileWidth, 40, tileHeight), materials.blockMaterial);
+                    
+                // Set block positions
+                block.position.set(j * tileWidth, 20, i * tileHeight);
+                
+                if (chrInArray === "1") {
+                    scene.add(block);
+                }
+                if (chrInArray === "2") {
+                    block.position.y = 60;
+                    block.scale.y = 3;
+                    scene.add(block);
+                }
+                if (chrInArray === "C") {
+                    var cfire = new Campfire(j * tileWidth, 5, i * tileHeight);
+                    cfire.addToScene();
+                    campfires.push(cfire);
+                }
+                // Add player to the scene when he is found in the array
+                if (chrInArray === "P") {
+                    player = new Player(camObject);
+                    player.gameObject.add(camera);
+                    
+                    player.gameObject.position.set((j * tileWidth), 20, (i * tileHeight));
+                    dirLight.target = player.gameObject.clone();
+                    
+                    scene.add(player.gameObject);
+                }
+                // Add tree
+                if (chrInArray === "T") {
+                    var treeTexture = Math.random() < .5 ? textures.pineTexture : textures.limeTexture,
+                        tree = makeTree(treeTexture, j * tileWidth, 40, i * tileHeight);
+                    scene.add(tree);
+                }
+                // Add arm thingy
+                if (chrInArray === "A") {
+                    var armPos = new THREE.Vector3((tileWidth / 2) + (j * tileWidth), 30, (tileHeight/ 2) + (i * tileHeight));
+                    arms.push(new Arm(armPos, new THREE.Euler(0, 0, -Math.PI/2), 0.2));
+                    arms.push(new Arm(armPos, new THREE.Euler(Math.PI, 0, Math.PI/2), 0.18));
+                    arms.push(new Arm(armPos, new THREE.Euler(0, 0, 0), 0.18));
+                    arms.push(new Arm(armPos, new THREE.Euler(-Math.PI, 0, 0), 0.18));
+                    arms.push(new Arm(armPos, new THREE.Euler(0, Math.PI / 2, Math.PI / 2), 0.18));
+                    for (var k = 0; k < arms.length; k++) {
+                        scene.add(arms[k].shoulder);
+                    }
+                }
+                // Add ruin mesh
+                if (chrInArray === "R") {
+                    var pos = new THREE.Vector3(j * tileWidth, 0, i * tileHeight);
+                    function addMesh(geometry, materials) {
+                        var mat = makeShaderMaterial({ map: textures.rockTexture }),
+                            mesh = new THREE.Mesh(geometry, mat);
+                            
+                        mesh.rotation.x = Math.PI / 2;
+                        mesh.position = pos;
+                        mesh.scale.set(20, 20, 20);
+                        scene.add(mesh);
+                    };
+                    loader.load("meshes/ruins35.js", addMesh);
+                }
+            }
+        }
+        
+        // Create ground
+        var ground = new THREE.Mesh(new THREE.CubeGeometry(levelWidth, 1, levelHeight, 1, 1, 1), materials.groundMaterial);
+        ground.position.set(levelWidth / 2, 0, levelHeight / 2);
+        for (var i = 0; i < ground.geometry.faceVertexUvs[0].length; i++) {
+            var uv = ground.geometry.faceVertexUvs[0][i];
+            uv[0] = new THREE.Vector2(0 ,10);
+            uv[2] = new THREE.Vector2(10 ,0);
+            uv[3] = new THREE.Vector2(10 ,10);
+        }
+        scene.add(ground);
+        
+        // Create skybox
+        var skyMaterials = [];
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: textures.west}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: textures.east}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: textures.ceiling}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: textures.floor}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: textures.north}) );
+        skyMaterials.push( new THREE.MeshBasicMaterial({map: textures.south}) );
+        for (var i = 0; i < skyMaterials.length; i++) {
+            skyMaterials[i].side = THREE.BackSide;
+            skyMaterials[i].depthWrite = false;
+        }
+        var meshFaceMaterial = new THREE.MeshFaceMaterial( skyMaterials );
+        meshFaceMaterial.depthWrite = false;
+        meshFaceMaterial.depthTest = false;
+        skybox = new THREE.Mesh(
+            //new THREE.CubeGeometry( 2,2,2,1,1,1 ), 
+            new THREE.CubeGeometry(2000, 2000, 2000, 1, 1, 1),
+            meshFaceMaterial
+        );
+        skybox.position = camObject.position;
+        scene.add(skybox);
+        
+        // Load the skysphere mesh
+        function skyHandler(geometry, materials) {
+            var mat = makeShaderMaterial({ map: textures.cloudTexture });
+            mat.transparent = true;
+            mat.blending = THREE.AdditiveBlending;
+            var mesh = new THREE.Mesh(geometry, mat);
+            mesh.position.set(260, 30, 200);
+            mesh.scale.set(400, 400, 400);
+            //meshes.push(mesh);
+            skySphere = mesh;
+            scene.add(mesh);
+        }
+        loader.load("meshes/sky.js", skyHandler);
+        
+        // Setup UI (minimap)
+        uiCanvas.width = 256;
+        uiCanvas.height = 256;
+        uiCanvas.style.position = "absolute";
+        uiCanvas.style.top = "10px";
+        uiCanvas.style.left = "10px";
+        uiCanvas.style.opacity = 0.6;
+        document.body.appendChild(uiCanvas);
+        
+        // Start!
+        loop();
+    }
+    
+    // ---------------------------------------------------------------------
+    //   Game loop
+    // ---------------------------------------------------------------------
+    function loop() {
+        var dt = timer.tick();
+        
+        // Rotate sky mesh
+        if (skySphere) skySphere.rotateY(dt / 40);
+        
+        // Update all campfires in the scene
+        for (var i = 0, max = campfires.length; i < max; i++) {
+            campfires[i].update(dt);
+        }
+        
+        // Update FPS display and draw minimap
+        fpsDisplay.update(dt);
+        drawMinimap();
+        
+        // Update player and skybox
+        player.update(dt);
+        
+        // Rotate arms, every other in opposite direction
+        // Update angle and cap it to 2 * PI
+        handAngle = (handAngle + dt) % (2 * Math.PI);
+        for (var i = 0, max = arms.length; i < max; i++) {
+            var arm = arms[i];
+            
+            if (i % 2 === 0) {
+                arm.shoulder.rotation.y = arm.originalRotation.y + handAngle;
+                arm.shoulder.rotation.z = arm.originalRotation.z + (Math.cos(handAngle) * handAmplitude);
+                arm.elbow.rotation.z = Math.cos(handAngle) * handAmplitude;
+            }
+            else {
+                arm.shoulder.rotation.y = arm.originalRotation.y - handAngle;
+                arm.shoulder.rotation.z = arm.originalRotation.z - (Math.cos(handAngle) * handAmplitude);
+                arm.elbow.rotation.z = -Math.sin(handAngle) * handAmplitude;
+            }
+            arm.wrist.rotation.x = Math.sin(handAngle) * (Math.PI / 4);
+        }
+        
+        // Render & request next frame
+        renderer.render(scene, camera);
+        requestAnimationFrame(loop);
+    }
+    
+    // ---------------------------------------------------------------------
+    //   Minimap drawing
+    // ---------------------------------------------------------------------
+    function drawMinimap() {
+        var pointSizeX = (uiCanvas.width / levelWidth) * tileWidth,
+            pointSizeY = (uiCanvas.height / levelHeight) * tileHeight,
+            playerX = ((player.gameObject.position.x) / levelWidth) * uiCanvas.width,
+            playerY = ((player.gameObject.position.z) / levelHeight) * uiCanvas.height,
+            playerRotationY = -player.gameObject.rotation.y - (Math.PI / 2),
+            lineStartPosX = playerX + (pointSizeX / 2),
+            lineStartPosY = playerY + (pointSizeY / 2),
+            lineLength = 40;
+            
+        uiTexture.needsUpdate = true;
+        
+        // Clear canvas
+        ui.fillStyle = "rgba(255, 190, 90, 0.2)";
+        ui.fillRect(0, 0, uiCanvas.width, uiCanvas.height);
+        
+        // Draw line vision
+        ui.strokeStyle = "#0000FF";
+        ui.lineWidth = "3";
+        ui.beginPath();
+        ui.moveTo(lineStartPosX, lineStartPosY);
+        ui.lineTo(lineStartPosX + (Math.cos(playerRotationY) * lineLength), lineStartPosY + (Math.sin(playerRotationY) * lineLength));
+        ui.closePath();
+        ui.stroke();
+        
+        // Draw level
+        ui.fillStyle = "#000000";
+        for (var i = 0; i < level.length; i++) {
+            for (var j = 0; j < level[i].length; j++) {
+                var chr = level[i].charAt(j);
+                if (chr !== " " && chr !== "P" && chr !== "R" && chr !== "A" && chr !== "T" && chr !== "C") ui.fillRect(j * pointSizeX, i * pointSizeY, pointSizeX, pointSizeY);
+            }
+        }
+        
+        // Draw player dot
+        ui.fillStyle = "#FF0000";
+        ui.fillRect(playerX, playerY, pointSizeX, pointSizeY);
+    }
+    
+    // Shader material is created here. If no options are given then default value will be provided.
+    function makeShaderMaterial(options) {
+        var defaultUniforms = {
+            uDirLightPos:       { type: "v3", value: dirLight.position },
+            uDirLightTargetPos: { type: "v3", value: new THREE.Vector3() },
+            uDirLightColor:     { type: "v3", value: new THREE.Vector3(0.3, 0.3, 0.5) },
+            uAmbientColor:      { type: "v3", value: new THREE.Vector3(ambientLight.color.r, ambientLight.color.g, ambientLight.color.b) },
+            uFlashLightColor:   { type: "v4", value: new THREE.Vector4(spotLight.color.r, spotLight.color.g, spotLight.color.b, 1.0) }
+        };
+        
+        // Add texture if it's present
+        if (options.map) defaultUniforms.map = { type: "t",  value: options.map };
+        
+        var un = options.uniforms || defaultUniforms,
+            vs = options.vs || $("default_vs").innerHTML,
+            fs = options.fs || $("default_fs").innerHTML;
+            
+        return new THREE.ShaderMaterial({ uniforms: un, vertexShader: vs, fragmentShader: fs });
+    }
+    
+    // Function for creating trees
+    function makeTree(texture, x, y, z) {
+        var treeMaterial = makeShaderMaterial({ map: texture, fs: $("fs_tree").innerHTML });
+        treeMaterial.side = THREE.DoubleSide;
+        var o3d = new THREE.Object3D();
+        var tree1 = new THREE.Mesh(new THREE.PlaneGeometry(50, 80), treeMaterial);
+        var tree2 = new THREE.Mesh(new THREE.PlaneGeometry(50, 80), treeMaterial);
+        tree1.rotation.set(0,0,Math.PI);
+        tree2.rotation.set(0,Math.PI / 2, Math.PI);
+        o3d.add(tree1);
+        o3d.add(tree2);
+        o3d.position.set(x, y, z);
+        return o3d;
+    }
+    // ---------------------------------------------------------------------
+    //   Particle emitter constructor
+    // ---------------------------------------------------------------------
+    function ParticleEmitter(options) {
+        this.options = options;
+        this.material = options.material;
+        this.material.map.flipY = false;
+        
+        this.particleGeometry = new THREE.Geometry();
+        this.particlesAlive = 0;
+        this.throughput = 0.0;
+        this.particlesPerSecond = options.particlesPerSecond || 1.0;
+        
+        // Create initial particles
+        for (var i = 0; i < options.maxParticles; i++) {
+            this.particleGeometry.vertices.push(new THREE.Vector3());
+            var newParticle = this.particleGeometry.vertices[i];
+            this.options.init(newParticle);
+            
+            // Set some basic values in case options don't provide them
+            if (!newParticle.velocity) newParticle.velocity = new THREE.Vector3(0, 1 + Math.random() * 10, 0);
+            if (!newParticle.age)      newParticle.age = 0.0;
+            if (!newParticle.lifetime) newParticle.lifetime = new THREE.Vector3(0, 1 + Math.random() * 10, 0);
+            if (!newParticle.isAlive)  newParticle.isAlive = true;
+        }
+        
+        // Create THREE.JS particle system
+        this.ps = new THREE.ParticleSystem(this.particleGeometry, this.material);
+        this.ps.renderDepth = 0;
+        this.ps.sortParticles = false;
+        this.ps.geometry.__webglParticleCount = 0;
+        this.ps.position = options.position;
+    }
+    
+    ParticleEmitter.prototype.removeDeadParticles = function() {
+        var endPoint = this.particlesAlive;
+        for (var i = 0; i < endPoint; i++) {
+            var particle = this.ps.geometry.vertices[i];
+            if (!particle.isAlive) {
+                this.options.init(particle);
+                
+                // Couldn't get this part to work, particles start to glitch
+                /*
+                var tmp = this.ps.geometry.vertices.splice(i, 1);
+                this.ps.geometry.vertices.push(tmp[0]);
+                endPoint--;
+                this.particlesAlive--;
+                this.particleGeometry.verticesNeedUpdate = true;
+                */
+            }
+        }
+    };
+    ParticleEmitter.prototype.update = function(dt) {
+    
+        this.ps.geometry.__webglParticleCount = this.particlesAlive;
+        this.removeDeadParticles();
+        var endPoint = this.particlesAlive;
+        for (var i = 0; i < endPoint; i++) {
+            var particle = this.particleGeometry.vertices[i];
+            if (particle) this.options.update(particle, dt);
+        }
+        
+        this.throughput += this.particlesPerSecond * dt
+        var particlesToCreate = Math.floor(this.throughput);
+        if (particlesToCreate > 1) {
+            this.throughput -= particlesToCreate;
+            this.init(particlesToCreate);
+        }
+        
+        this.ps.geometry.verticesNeedUpdate = true;
+    };
+    ParticleEmitter.prototype.init = function(particleCount) {
+        var prevAlive = this.particlesAlive,
+            newTotal = particleCount + prevAlive;
+            
+        newTotal = newTotal > this.options.maxParticles ? this.options.maxParticles : newTotal;
+        
+        this.particlesAlive = newTotal;
+        for (var p = prevAlive; p < newTotal; p++) {
+            this.options.init(this.particleGeometry.vertices[p], this.position);
+        }
+        this.particleGeometry.verticesNeedUpdate = true;
+    };
+    
+    // ---------------------------------------------------------------------
+    //   Campfire constructor
+    // ---------------------------------------------------------------------
+   function Campfire(x, y, z) {
+        this.smokeParticleOptions = {
+            maxParticles: 40,
+            position: new THREE.Vector3(x, y, z),
+            particlesPerSecond: 2.0,
+            material: new THREE.ParticleBasicMaterial({
+                color: 0xFFFFFF,
+                size: 60,
+                map: textures.smokeTexture,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                opacity: 0.2,
+            }),
+            update: function(particle, dt) {
+                if (particle.isAlive) {
+                    particle.add(particle.velocity.clone().multiplyScalar(dt));
+                    particle.age += dt;
+                }
+                if (particle.age >= particle.lifetime) {
+                    particle.isAlive = false;
+                }
+            },
+            init: function(particle, position) {
+                particle.set(-2 + Math.random() * 4, Math.random() * 10, -2 + Math.random() * 4);
+                particle.velocity = new THREE.Vector3(-10 + Math.random() * 20, 4 + Math.random() * 6, -10 + Math.random() * 20);
+                particle.age = 0.0;
+                particle.lifetime = 3.0 + Math.random() * 2.0;
+                particle.isAlive = true;
+            }
+        };
+        this.firePlane = new THREE.Mesh(
+            new THREE.PlaneGeometry(20, 20), 
+            new THREE.MeshBasicMaterial({ 
+                map: textures.flameTexture, 
+                transparent: true, 
+                blending: THREE.AdditiveBlending, 
+                side: THREE.DoubleSide, 
+                depthWrite: false,
+            })
+        );
+        this.particleEmitter = new ParticleEmitter(this.smokeParticleOptions);
+        this.firePlane.position.set(x, y, z);
+    }
+    Campfire.prototype.addToScene = function() {
+        scene.add(this.particleEmitter.ps);
+        scene.add(this.firePlane);
+    };
+    Campfire.prototype.update = function(dt) {
+        this.particleEmitter.update(dt);
+        this.firePlane.lookAt(player.gameObject.position);
+    };
+    
+    // ---------------------------------------------------------------------
+    //   Player constructor
+    // ---------------------------------------------------------------------
+    function Player(obj) {
+        this.gameObject = obj;
+        this.acceleration = 15;
+        this.deacceleration = 15;
+        this.maxSpeed = 2;
+        this.canJump = true;
+        this.weight = 5;
+        this.velocity = new THREE.Vector3();
+    }
+    Player.prototype.update = function(dt) {
+        var dir = 0;
+        if (keys.W.isDown) {
+            dir = -Math.PI / 2;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.z > -this.maxSpeed) this.velocity.z -= this.acceleration * dt;
+            }
+        }
+        if (keys.S.isDown) {
+            dir = Math.PI / 2;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.z < this.maxSpeed) this.velocity.z += this.acceleration * dt;
+            }
+        }
+        if (keys.A.isDown) {
+            dir = -Math.PI;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.x > -this.maxSpeed) this.velocity.x -= this.acceleration * dt;
+            }
+        }
+        if (keys.D.isDown) {
+            dir = 0;
+            if (this.canMoveInDirection(dir)) {
+                if (this.velocity.x < this.maxSpeed) this.velocity.x += this.acceleration * dt;
+            }
+        }
+       
+        // Jumping
+        if (keys.SPACE.isDown && this.canJump) {
+            this.velocity.y = 2;
+            this.canJump = false;
+        }
+        // Player falls too low
+        if (this.gameObject.position.y < 20.0) {
+            this.gameObject.position.y = 20.0;
+            this.velocity.y = 0.0;
+        }
+        // Player is grounded and jump key is released
+        if (!keys.SPACE.isDown && this.gameObject.position.y === 20.0) {
+            this.canJump = true;
+        }
+        // Player is airborne
+        if (!this.canJump) {
+            this.velocity.y -= this.weight * dt;
+        }
+        
+        // Deaccelerate using lerp. If target direction is blocked, stop completely
+        //var deacceleration = 0.2;
+        var tolerance = 0.00001;
+        if ((!keys.W.isDown && !keys.S.isDown) && (this.velocity.z > tolerance || this.velocity.z < -tolerance)) this.velocity.lerp(new THREE.Vector3(this.velocity.x, this.velocity.y, 0), this.deacceleration * dt);
+        if ((!keys.A.isDown && !keys.D.isDown) && (this.velocity.x > tolerance || this.velocity.x < -tolerance)) this.velocity.lerp(new THREE.Vector3(0, this.velocity.y, this.velocity.z), this.deacceleration * dt);
+        if (!this.canMoveInDirection(dir)) this.velocity.set(0, this.velocity.y, 0);
+        
+        // Apply movement
+        this.gameObject.translateX(this.velocity.x);
+        this.gameObject.translateY(this.velocity.y);
+        this.gameObject.translateZ(this.velocity.z);
+        
+    };
+    // Functions for collision detection
+    // First function checks if tile exists and if player can be walk through it.
+    Player.prototype.canMoveInDirection = function(direction) {
+        return level[this.getNextTile(direction).z] && 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) && 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === " " || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "A" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "R" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "T" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "C" || 
+               level[this.getNextTile(direction).z].charAt(this.getNextTile(direction).x) === "P";
+    };
+    // This gets the array indexes in players movement direction
+    Player.prototype.getNextTile = function(direction) {
+        var X = Math.floor( ((tileWidth / 2) + this.gameObject.position.x + (Math.cos(-this.gameObject.rotation.y + direction) * 20)) / tileWidth ),
+            Z = Math.floor( ((tileHeight / 2) + this.gameObject.position.z + (Math.sin(-this.gameObject.rotation.y + direction) * 20)) / tileHeight );
+        return {x: X, z: Z};
+    };
+    
+    // ---------------------------------------------------------------------
+    //   Arm constructor
+    // ---------------------------------------------------------------------
+    function Arm(pos, rot, scale) {
+        var sphereGeometry = new THREE.SphereGeometry(4, 32, 32),
+            randomMaterial = function() { 
+                return new THREE.MeshBasicMaterial({color: Math.random() * 0xFFFFFF, transparent: true}); 
+            };
+            
+        this.originalPosition = pos.clone();
+        this.originalRotation = rot.clone();
+        
+        this.thumb    = new THREE.Mesh(new THREE.CubeGeometry(20, 3, 3), randomMaterial());
+        this.finger1  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger2  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger3  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.finger4  = new THREE.Mesh(new THREE.CubeGeometry(2, 30, 1), randomMaterial());
+        this.palm     = new THREE.Mesh(new THREE.CubeGeometry(30, 30, 14), randomMaterial());
+        this.wrist    = new THREE.Mesh(sphereGeometry, randomMaterial());
+        this.lower    = new THREE.Mesh(new THREE.CubeGeometry(2, 50, 2), randomMaterial());
+        this.elbow    = new THREE.Mesh(sphereGeometry, randomMaterial());
+        this.upper    = new THREE.Mesh(new THREE.CubeGeometry(2, 50, 2), randomMaterial());
+        this.shoulder = new THREE.Mesh(sphereGeometry, randomMaterial());
+        
+        // Adjust positions for each part
+        this.shoulder.position.y = 10;
+        this.upper.position.y = 25;
+        this.elbow.position.y = 25;
+        this.lower.position.y = 25;
+        this.wrist.position.y = 25;
+        this.palm.position.y = 15;
+        this.finger1.position.x = -12;
+        this.finger1.position.y = 26;
+        this.finger2.position.x = -4;
+        this.finger2.position.y = 26;
+        this.finger3.position.x = 4;
+        this.finger3.position.y = 26;
+        this.finger4.position.x = 12;
+        this.finger4.position.y = 26;
+        this.thumb.position.x = -20;
+        this.shoulder.position = pos;
+        this.shoulder.rotation = rot;
+        this.shoulder.scale.set(scale, scale, scale);
+        
+        this.palm.add(this.thumb);
+        this.palm.add(this.finger1);
+        this.palm.add(this.finger2);
+        this.palm.add(this.finger3);
+        this.palm.add(this.finger4);
+        this.wrist.add(this.palm);
+        this.lower.add(this.wrist);
+        this.elbow.add(this.lower);
+        this.upper.add(this.elbow);
+        this.shoulder.add(this.upper);
+    }
+    
+    // ---------------------------------------------------------------------
+    //   Game timer to determine deltatime. Copied from:
+    //   http://blog.sethladd.com/2011/05/source-code-slides-and-video-for-html5.html
+    // ---------------------------------------------------------------------
+    function Timer () {
+        this.gameTime = 0;
+        this.currentFrame = 0;
+        this.maxStep = 0.05;
+        this.wallLastTime = 0;
+    }
+    Timer.prototype.tick = function () {
+        var wallCurrent = window.performance && window.performance.now ? window.performance.now() : new Date().getTime();
+        var wallDelta = (wallCurrent - this.wallLastTime) / 1000;
+        this.wallLastTime = wallCurrent;
+        var gameDelta = Math.min(wallDelta, this.maxStep);
+        this.gameTime += gameDelta;
+        this.currentFrame += 1;
+        return gameDelta;
+    };
+    
+    // ---------------------------------------------------------------------
+    //   FPS widget
+    // ---------------------------------------------------------------------
+    function FpsDisplay(x, y) {
+        this.x = x;
+        this.y = y;
+        this.width = 120;
+        this.height = 20;
+        this.fps = 0;
+        this.fpsTimer = 0;
+        this.frame = 0;
+        this.times = [];
+        this.decimals = 1;
+        
+        var ele = document.createElement("div");
+        ele.style.background = "#554411";
+        ele.style.color = "#AA9933";
+        ele.style.border = "2px solid #332200";
+        ele.style.borderRadius = "10px";
+        ele.style.top = this.x +"px";
+        ele.style.left = this.y +"px";
+        ele.style.position = "absolute";
+        ele.style.width = this.width +"px";
+        ele.style.height = this.height +"px";
+        ele.style.padding = 4 +"px";
+        ele.style.zIndex = 100;
+        this.domElement = ele;
+    }
+    FpsDisplay.prototype.update = function(dt) {
+        this.frame += 1;
+        this.fpsTimer += dt;
+        this.times.push(this.frame / this.fpsTimer);
+        if (this.times.length > 5) {
+            this.times.splice(0, 1);
+        }
+        if (this.fpsTimer >= 1.0) {
+           this.frame = 0;
+           this.fpsTimer = 0;
+        }
+        this.fps = this.getAverage(this.times);
+        this.domElement.innerHTML = "FPS: "+ this.fps.toFixed(this.decimals);
+    };
+    FpsDisplay.prototype.getAverage = function(arr) {
+        var i, total = 0, l = arr.length;
+        
+        for (i = 0; i < l; i++) {
+            total += arr[i];
+        }
+        return total / l;
+    };
+    
+    // ---------------------------------------------------------------------
+    //   Input events
+    // ---------------------------------------------------------------------
+    container.onmousedown = function(e) {
+        mouse.isDown = true;
+    };
+    window.onmouseup = function(e) {
+        mouse.isDown = false;
+    };
+    window.onmousemove = function(e) {
+        if (mouse.isDown) {
+            var rotY = (e.pageX - mouse.prevX) * 0.003;
+            var rot = (e.pageY - mouse.prevY) * 0.003;
+            player.gameObject.rotation.y -= rotY;
+            camera.rotation.x -= rot;
+        }
+        mouse.prevY = e.pageY;
+        mouse.prevX = e.pageX;
+    };
+    window.onkeydown = function(e) {
+        for (var k in keys) {
+            if (e.keyCode === keys[k].code) keys[k].isDown = true;
+        }
+    };
+    window.onkeyup = function(e) {
+        for (var k in keys) {
+            if (e.keyCode === keys[k].code) keys[k].isDown = false;
+        }
+    };
+    </script>
+    </body>
+</html>
