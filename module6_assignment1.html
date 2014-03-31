@@ -135,7 +135,7 @@ By: Juhani Koivulainen
         player,
         skybox, skySphere, 
         dirLight, spotLight, ambientLight, 
-        testSphere = new THREE.Mesh(new THREE.SphereGeometry(120, 64, 64), new THREE.MeshBasicMaterial({color:0xffffff})),
+        //testSphere = new THREE.Mesh(new THREE.SphereGeometry(120, 64, 64), new THREE.MeshBasicMaterial({color:0xffffff})),
         
         // Minimap vars
         uiCanvas = document.createElement("canvas"),
@@ -252,7 +252,7 @@ By: Juhani Koivulainen
                     scene.add(block);
                 }
                 if (chrInArray === "C") {
-                    var cfire = new Campfire(j * tileWidth, 8, i * tileHeight);
+                    var cfire = new Campfire(j * tileWidth, 0, i * tileHeight);
                     cfire.addToScene();
                     campfires.push(cfire);
                 }
@@ -570,6 +570,7 @@ By: Juhani Koivulainen
     // ---------------------------------------------------------------------
     //   Campfire constructor
     // ---------------------------------------------------------------------
+    // EDIT: I added fire as a particle system too...
    function Campfire(x, y, z) {
         this.smokeParticleOptions = {
             maxParticles: 40,
@@ -601,6 +602,36 @@ By: Juhani Koivulainen
                 particle.isAlive = true;
             }
         };
+        this.fireParticleOptions = {
+            maxParticles: 30,
+            position: new THREE.Vector3(x, y, z),
+            particlesPerSecond: 4,
+            material: new THREE.ParticleBasicMaterial({
+                color: 0xFFFFFF,
+                size: 20,
+                map: textures.flameTexture,
+                transparent: true,
+                blending: THREE.AdditiveBlending,
+                depthWrite: false,
+                opacity: 0.2,
+            }),
+            update: function(particle, dt) {
+                if (particle.isAlive) {
+                    particle.add(particle.velocity.clone().multiplyScalar(dt));
+                    particle.age += dt;
+                }
+                if (particle.age >= particle.lifetime) {
+                    particle.isAlive = false;
+                }
+            },
+            init: function(particle, position) {
+                particle.set(-2 + Math.random() * 4, Math.random() * 4, -2 + Math.random() * 4);
+                particle.velocity = new THREE.Vector3(-1 + Math.random() * 2, 1 + Math.random() * 3, -1 + Math.random() * 2);
+                particle.age = 0.0;
+                particle.lifetime = Math.random() * 2.0;
+                particle.isAlive = true;
+            }
+        };
         this.firePlane = new THREE.Mesh(
             new THREE.PlaneGeometry(20, 20), 
             new THREE.MeshBasicMaterial({ 
@@ -612,15 +643,18 @@ By: Juhani Koivulainen
             })
         );
         this.particleEmitter = new ParticleEmitter(this.smokeParticleOptions);
-        this.firePlane.position.set(x, y, z);
+        this.particleEmitter2 = new ParticleEmitter(this.fireParticleOptions);
+        //this.firePlane.position.set(x, y, z);
     }
     Campfire.prototype.addToScene = function() {
         scene.add(this.particleEmitter.ps);
-        scene.add(this.firePlane);
+        scene.add(this.particleEmitter2.ps);
+        //scene.add(this.firePlane);
     };
     Campfire.prototype.update = function(dt) {
         this.particleEmitter.update(dt);
-        this.firePlane.lookAt(player.gameObject.position);
+        this.particleEmitter2.update(dt);
+        //this.firePlane.lookAt(player.gameObject.position);
     };
     
     // ---------------------------------------------------------------------
