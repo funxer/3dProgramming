@@ -35,10 +35,6 @@ By: Juhani Koivulainen
         uniform vec3 uDirLightTargetPos;
         uniform vec3 uDirLightColor;
         
-        // Spotlight
-        float spotCosCutoff = -0.1;
-        float exponent = 2.0;
-        
         varying vec2 vUv;
         varying vec3 vLight;
         varying vec3 vViewPosition;
@@ -140,7 +136,6 @@ By: Juhani Koivulainen
         skybox, skySphere, 
         dirLight, spotLight, ambientLight, 
         testSphere = new THREE.Mesh(new THREE.SphereGeometry(120, 64, 64), new THREE.MeshBasicMaterial({color:0xffffff})),
-        
         
         // Minimap vars
         uiCanvas = document.createElement("canvas"),
@@ -257,7 +252,7 @@ By: Juhani Koivulainen
                     scene.add(block);
                 }
                 if (chrInArray === "C") {
-                    var cfire = new Campfire(j * tileWidth, 5, i * tileHeight);
+                    var cfire = new Campfire(j * tileWidth, 8, i * tileHeight);
                     cfire.addToScene();
                     campfires.push(cfire);
                 }
